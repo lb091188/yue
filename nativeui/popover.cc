@@ -125,6 +125,13 @@ void Popover::ShowRelativeTo(View* view) {
   RectF bounds(window_->GetBounds().size());
   bounds.set_x(vbounds.x() + (vbounds.width() - bounds.width()) / 2);
   bounds.set_y(vbounds.bottom() + 1);
+  // Flip above the anchor when there is not enough room below in the work
+  // area of the nearest display, so popovers anchored near the bottom of
+  // the screen stay visible.
+  Display display =
+      Screen::GetCurrent()->GetDisplayNearestPoint(vbounds.origin());
+  if (bounds.bottom() > display.work_area.bottom())
+    bounds.set_y(vbounds.y() - bounds.height() - 1);
   window_->SetBounds(bounds);
 #if defined(OS_LINUX)
   // Activating would present the window and steal keyboard focus from
