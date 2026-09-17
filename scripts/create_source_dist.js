@@ -121,7 +121,9 @@ function CopySources(sources, headers) {
 
   execSync('node scripts/modify_base_includes.js')
 
-  PatchVendoredHeaders(targetDir)
+  // Safety net for the typos fixed in bootstrap.js: the submodule may have
+  // been patched already, in which case this is a no-op.
+  execSync('node scripts/patch_vendored_headers.js out/Dist/source')
   if (targetOs === 'win')
     CopyWebView2SDK(targetDir)
 
@@ -131,38 +133,6 @@ function CopySources(sources, headers) {
     .addFile('sample_app/main.cc')
     .addFile('sample_app/exe.manifest')
     .writeToFile(`libyue_${version}_${targetOs}`)
-}
-
-// Fix typos in the vendored base headers, which cannot be fixed upstream
-// because the files come from an external submodule.
-function PatchVendoredHeaders(targetDir) {
-  const patches = [
-    {
-      path: path.join('include', 'base', 'allocator', 'partition_allocator',
-                      'src', 'partition_alloc', 'partition_alloc_base',
-                      'no_destructor.h'),
-      from: 'return const_cast<PlacementStorage*>(this)->storage();',
-      to: 'return reinterpret_cast<const T*>(storage_);',
-    },
-    {
-      path: path.join('include', 'base', 'containers', 'id_map.h'),
-      from: '      map_ = iter.map;\n      iter_ = iter.iter;',
-      to: '      map_ = iter.map_;\n      iter_ = iter.iter_;',
-    },
-  ]
-  for (const patch of patches) {
-    const file = path.join(targetDir, patch.path)
-    if (!fs.existsSync(file))
-      throw new Error(`Unable to find the vendored header: ${file}`)
-    const content = fs.readFileSync(file, 'utf8')
-    if (content.includes(patch.to))
-      continue  // already fixed
-    if (!content.includes(patch.from)) {
-      console.warn(`Warning: typo not found in ${patch.path}, the submodule may have changed`)
-      continue
-    }
-    fs.writeFileSync(file, content.replace(patch.from, patch.to))
-  }
 }
 
 // Bundle the WebView2 SDK headers and the loader DLL, which are required to
@@ -177,9 +147,13 @@ function CopyWebView2SDK(targetDir) {
                                   path.basename(sdk), 'build', 'native', 'include')
   fs.copySync(includeDir, targetInclude)
   // libyue includes <webview2.h> in lower case, which does not resolve on
-  // case-sensitive file systems.
-  fs.copySync(path.join(targetInclude, 'WebView2.h'),
-              path.join(targetInclude, 'webview2.h'))
+  // case-sensitive file systems.  On case-insensitive file systems (win,
+  // default macOS) the alias resolves to WebView2.h itself and must be
+  // skipped, otherwise copying would fail with "source and destination
+  // must not be the same".
+  const alias = path.join(targetInclude, 'webview2.h')
+  if (!fs.existsSync(alias))
+    fs.copySync(path.join(targetInclude, 'WebView2.h'), alias)
   const loader = path.join(sdk, 'build', 'native', 'x64', 'WebView2Loader.dll')
   fs.copySync(loader, path.join(targetDir, 'lib', 'WebView2Loader.dll'))
 }

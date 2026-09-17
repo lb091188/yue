@@ -52,7 +52,7 @@ jobs:
           key: prebuilt-${{ matrix.target }}
 
       - name: Bootstrap
-        run: node scripts/bootstrap.js --target-cpu=x64 --cc-wrapper=ccache
+        run: node scripts/bootstrap.js --cc-wrapper=ccache
 
       - name: Create source distribution
         run: node scripts/create_source_dist.js --cc-wrapper=ccache

@@ -22,6 +22,9 @@ else if (process.platform == 'win32')
 
 execSync('git submodule sync --recursive', {stdio: 'ignore'})
 execSync('git submodule update --init --recursive')
+// The vendored base submodule carries typos that break the build with newer
+// clang; fix them before anything compiles.
+execSync('node scripts/patch_vendored_headers.js')
 execSync('node scripts/download_gn.js')
 execSync(`node scripts/download_node_headers.js node ${process.version} ${targetOs} ${targetCpu}`)
 execSync(`node scripts/download_lua_sources.js lua ${luaVersions[0]}`)
