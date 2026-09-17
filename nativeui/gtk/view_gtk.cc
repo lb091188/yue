@@ -264,7 +264,27 @@ RectF View::GetBounds() const {
 RectF View::GetBoundsInScreen() const {
   if (!GetWindow())
     return GetBounds();
-  // If the widget has a window, then get the position of window directly.
+  // Translating via GTK is aware of viewport scrolling and nested
+  // containers, while manually accumulating allocations is not.
+  GtkWidget* toplevel = gtk_widget_get_toplevel(view_);
+  if (toplevel != nullptr && gtk_widget_is_toplevel(toplevel)) {
+    gint tx = 0, ty = 0;
+    if (gtk_widget_translate_coordinates(view_, toplevel, 0, 0, &tx, &ty)) {
+      gint wx = 0, wy = 0;
+      // Origin of the client area: mixing the decoration-including
+      // gtk_window_get_position with client coordinates would offset the
+      // result by a title bar.
+      GdkWindow* tw = gtk_widget_get_window(toplevel);
+      if (tw != nullptr)
+        gdk_window_get_origin(tw, &wx, &wy);
+      GtkAllocation alloc;
+      gtk_widget_get_allocation(view_, &alloc);
+      return RectF(static_cast<float>(wx + tx),
+                    static_cast<float>(wy + ty),
+                    static_cast<float>(alloc.width),
+                    static_cast<float>(alloc.height));
+    }
+  }
   GdkWindow* window = nullptr;
   if (NU_IS_CONTAINER(view_))
     window = nu_container_get_window(NU_CONTAINER(view_));
@@ -276,8 +296,6 @@ RectF View::GetBoundsInScreen() const {
     gdk_window_get_geometry(window, NULL, NULL, &width, &height);
     return RectF(x, y, width, height);
   }
-  // Otherwise fallback to manual computing, they shouldn't make a difference
-  // but we want to use raw APIs when possible for correctness.
   return nu::RectF(GetBounds().size()) +
          OffsetFromWindow() +
          GetWindow()->GetBounds().OffsetFromOrigin();
