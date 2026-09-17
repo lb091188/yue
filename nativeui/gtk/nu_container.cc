@@ -107,7 +107,7 @@ static void nu_container_unrealize(GtkWidget* widget) {
 static void nu_container_map(GtkWidget* widget) {
   NUContainerPrivate* priv = NU_CONTAINER(widget)->priv;
   if (priv->event_window)
-    gdk_window_show(priv->event_window);
+    gdk_window_show_unraised(priv->event_window);  // do not raise on map
 
   GTK_WIDGET_CLASS(nu_container_parent_class)->map(widget);
 }
