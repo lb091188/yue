@@ -50,6 +50,13 @@ base::FilePath GetUserDataDir() {
 // Return the options used for creating WebView2.
 Microsoft::WRL::ComPtr<CoreWebView2EnvironmentOptions> GetWebView2Options() {
   auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+  // The LIBYUE_WEBVIEW2_ARGS environment variable appends extra browser
+  // arguments, e.g. --no-proxy-server.
+  {
+    wchar_t extra_args[2048] = L"";
+    if (::GetEnvironmentVariableW(L"LIBYUE_WEBVIEW2_ARGS", extra_args, 2048) > 0)
+      options->put_AdditionalBrowserArguments(extra_args);
+  }
   Microsoft::WRL::ComPtr<ICoreWebView2EnvironmentOptions4> options4;
   if (SUCCEEDED(options.As(&options4))) {
     for (const auto& it : GetProtocolHandlers()) {
