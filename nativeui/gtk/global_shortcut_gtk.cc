@@ -60,16 +60,25 @@ bool GlobalShortcut::OnKeyPress(NativeAccelerator na) {
 }
 
 void GlobalShortcut::StartWatching() {
+  // There is no X11 root window to filter events for under Wayland.
+  if (!GDK_IS_X11_DISPLAY(gdk_display_get_default()))
+    return;
   auto func = reinterpret_cast<GdkFilterFunc>(&RootWindowKeyFilter);
   gdk_window_add_filter(gdk_get_default_root_window(), func, this);
 }
 
 void GlobalShortcut::StopWatching() {
+  if (!GDK_IS_X11_DISPLAY(gdk_display_get_default()))
+    return;
   auto func = reinterpret_cast<GdkFilterFunc>(&RootWindowKeyFilter);
   gdk_window_remove_filter(gdk_get_default_root_window(), func, this);
 }
 
 bool GlobalShortcut::PlatformRegister(const Accelerator& accelerator, int id) {
+  // GDK_WINDOW_XDISPLAY under Wayland is a type confusion and would crash
+  // in XKeysymToKeycode; fail the registration instead.
+  if (!GDK_IS_X11_DISPLAY(gdk_display_get_default()))
+    return false;
   int modifiers = GetNativeModifiers(accelerator);
   int keysym = XKeysymForWindowsKeyCode(accelerator.GetKeyCode(), false);
   GdkWindow* root = gdk_get_default_root_window();
