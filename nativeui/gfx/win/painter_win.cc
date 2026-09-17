@@ -309,7 +309,7 @@ void PainterWin::Initialize(Size size, float scale_factor) {
   graphics_.SetSmoothingMode(Gdiplus::SmoothingModeHighQuality);
   graphics_.SetInterpolationMode(Gdiplus::InterpolationModeHighQuality);
   graphics_.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
-  graphics_.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAlias);
+  graphics_.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
   // Initial state.
   states_.emplace(std::move(size), scale_factor, Color(), Color());
 }

@@ -73,7 +73,7 @@ RectF AttributedText::GetBoundsFor(const SizeF& size) const {
 
   Gdiplus::Graphics graphics(dc);
   // https://stackoverflow.com/questions/1203087/why-is-graphics-measurestring-returning-a-higher-than-expected-number
-  graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAlias);
+  graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
   Gdiplus::RectF bounds = ToGdi(RectF(ScaleSize(size, scale_factor)));
   Gdiplus::RectF rect;
   graphics.MeasureString(text.data(), static_cast<int>(text.size()),
