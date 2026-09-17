@@ -48,12 +48,19 @@ void Scroll::PlatformInit() {
 }
 
 void Scroll::PlatformSetContentView(View* view) {
-  // Receive the content size from current content view.
-  Size csize = view->GetPixelBounds().size();
+  // Keep width request unset (-1) and use the content's natural height,
+  // so the scroll area does not shrink to 0x0 when no explicit size was
+  // ever assigned.
+  int req_w = -1, req_h = -1;
   if (content_view_) {
-    int w, h;
-    gtk_widget_get_size_request(content_view_->GetNative(), &w, &h);
-    csize = Size(w, h);
+    gtk_widget_get_size_request(content_view_->GetNative(), &req_w, &req_h);
+    if (req_w == 0 && req_h == 0)  // 0x0 written by upstream means unset
+      req_w = req_h = -1;
+  }
+  if (req_w == -1 && req_h == -1 && view->IsContainer()) {
+    SizeF natural = static_cast<Container*>(view)->GetPreferredSize();
+    if (natural.height() > 0)
+      req_h = static_cast<int>(natural.height());
   }
 
   GtkWidget* viewport = gtk_bin_get_child(GTK_BIN(GetNative()));
@@ -64,7 +71,7 @@ void Scroll::PlatformSetContentView(View* view) {
   }
 
   gtk_container_add(GTK_CONTAINER(viewport), view->GetNative());
-  gtk_widget_set_size_request(view->GetNative(), csize.width(), csize.height());
+  gtk_widget_set_size_request(view->GetNative(), req_w, req_h);
 }
 
 void Scroll::SetContentSize(const SizeF& size) {
