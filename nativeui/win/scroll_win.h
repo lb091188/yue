@@ -53,6 +53,8 @@ class ScrollImpl : public ContainerImpl,
   Rect GetScrollbarRect(bool vertical) const;
 
   Size content_size_;
+  // When false, the scroll range follows the content's natural size.
+  bool content_size_explicit_ = false;
   Vector2d origin_;
 
   // The height of scrollbar.

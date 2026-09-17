@@ -29,6 +29,7 @@ void ScrollImpl::SetOrigin(const Vector2d& origin) {
 
 void ScrollImpl::SetContentSize(const Size& size) {
   content_size_ = size;
+  content_size_explicit_ = true;
   UpdateScrollbar();
   UpdateOrigin(origin_);
   Layout();
@@ -61,6 +62,17 @@ void ScrollImpl::OnScroll(int x, int y) {
 }
 
 void ScrollImpl::Layout() {
+  // Without an explicit content size, follow the content's natural size.
+  if (delegate_->GetContentView() && !content_size_explicit_ &&
+      delegate_->GetContentView()->IsContainer()) {
+    const SizeF pref = static_cast<Container*>(
+        delegate_->GetContentView())->GetPreferredSize();
+    const Size natural = ToCeiledSize(ScaleSize(pref, scale_factor()));
+    if (natural != content_size_) {
+      content_size_ = natural;
+      UpdateScrollbar();
+    }
+  }
   if (h_scrollbar_)
     h_scrollbar_->SizeAllocate(GetScrollbarRect(false) +
                                size_allocation().OffsetFromOrigin());
