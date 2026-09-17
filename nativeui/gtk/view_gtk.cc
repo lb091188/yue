@@ -530,13 +530,13 @@ void View::PlatformSetFont(Font* font) {
 
 void View::SetColor(Color color) {
   ApplyStyle(view_, "color",
-             base::StringPrintf("* { color: %s; }",
+             base::StringPrintf("*:not(selection) { color: %s; }",
                                 color.ToString().c_str()));
 }
 
 void View::SetBackgroundColor(Color color) {
   ApplyStyle(view_, "background-color",
-             base::StringPrintf("* { background-color: %s; }",
+             base::StringPrintf("*:not(selection) { background-color: %s; }",
                                 color.ToString().c_str()));
 }
 
