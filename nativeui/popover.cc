@@ -126,7 +126,14 @@ void Popover::ShowRelativeTo(View* view) {
   bounds.set_x(vbounds.x() + (vbounds.width() - bounds.width()) / 2);
   bounds.set_y(vbounds.bottom() + 1);
   window_->SetBounds(bounds);
+#if defined(OS_LINUX)
+  // Activating would present the window and steal keyboard focus from
+  // the anchor view under GTK, breaking typing after the popover shows;
+  // mapping the window is enough.
+  window_->SetVisible(true);
+#else
   window_->Activate();
+#endif
   window_->SetCapture();
 }
 
