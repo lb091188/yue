@@ -65,7 +65,18 @@ struct MessageBoxImpl : base::PlatformThread::Delegate {
   void ThreadMain() {
     BOOL flag = FALSE;
     int res = 0;
-    ::TaskDialogIndirect(&config, &res, nullptr, &flag);
+    // TaskDialogIndirect is only exported by ordinal 345 of v6 comctl32;
+    // resolve it dynamically so exes without a v6 manifest do not crash
+    // on load, and behave as cancelled when it is unavailable.
+    static const auto task_dialog_indirect =
+        reinterpret_cast<decltype(&::TaskDialogIndirect)>(
+            ::GetProcAddress(::GetModuleHandleW(L"comctl32.dll"),
+                             MAKEINTRESOURCEA(345)));
+    if (task_dialog_indirect == nullptr) {
+      box->OnClose();
+      return;
+    }
+    task_dialog_indirect(&config, &res, nullptr, &flag);
     MessageLoop::PostTask([=]() {
       if (res == 0 || res == IDCANCEL)
         box->OnClose();
@@ -104,7 +115,13 @@ int MessageBox::PlatformRunForWindow(Window* window) {
   box_->config.hwndParent = window ? window->GetNative()->hwnd() : NULL;
   int res = cancel_response_;
   BOOL flag = FALSE;
-  ::TaskDialogIndirect(&box_->config, &res, nullptr, &flag);
+  // See the comment in ThreadMain for the dynamic resolution.
+  static const auto task_dialog_indirect =
+      reinterpret_cast<decltype(&::TaskDialogIndirect)>(
+          ::GetProcAddress(::GetModuleHandleW(L"comctl32.dll"),
+                           MAKEINTRESOURCEA(345)));
+  if (task_dialog_indirect != nullptr)
+    task_dialog_indirect(&box_->config, &res, nullptr, &flag);
   return (res == 0 || res == IDCANCEL) ? cancel_response_ : res - kIDStart;
 }
 
