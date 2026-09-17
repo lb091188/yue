@@ -1,6 +1,11 @@
 name: build
 
-on: [push, pull_request]
+# The v*-mbt* tags are handled by the prebuilt workflow instead.
+on:
+  push:
+    tags-ignore:
+      - 'v*-mbt*'
+  pull_request:
 
 jobs:
   build:

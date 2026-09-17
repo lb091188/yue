@@ -1,0 +1,90 @@
+name: prebuilt
+
+# Build the source distributions and the prebuilt static libraries for the
+# MoonBit bindings (github.com/NoahLiu/moonbit-libyue).  Tag names for this
+# workflow follow the pattern v<upstream>-mbt.<n>, e.g. v0.15.6-mbt.1, and
+# produce a draft release with:
+#   libyue_<version>_<os>.zip                  source distribution
+#   libyue_prebuilt_<version>_<os>_<arch>.zip  headers + static libraries
+on:
+  push:
+    tags:
+      - 'v*-mbt*'
+  workflow_dispatch:
+
+jobs:
+  prebuilt:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux
+            runner: ubuntu-22.04
+          - target: mac
+            runner: macos-15
+          - target: win
+            runner: windows-2022
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Install Linux Dependencies
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt update -qq
+          sudo apt install -qq cmake libgtk-3-dev libnotify-dev libwebkit2gtk-4.0-dev
+          sudo update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100
+          sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang 100
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python Dependencies
+        run: python -m pip install --upgrade setuptools
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: prebuilt-${{ matrix.target }}
+
+      - name: Bootstrap
+        run: node scripts/bootstrap.js --target-cpu=x64 --cc-wrapper=ccache
+
+      - name: Create source distribution
+        run: node scripts/create_source_dist.js --cc-wrapper=ccache
+
+      - name: Create prebuilt libraries
+        run: node scripts/create_prebuilt_lib.js
+
+      - name: Upload Files
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-${{ matrix.target }}
+          path: out/Dist/*.zip
+          retention-days: 5
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [prebuilt]
+    runs-on: ubuntu-latest
+    permissions:
+      # Needed by action-gh-release.
+      contents: write
+
+    steps:
+      - name: Download Files
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Yue ${{ github.ref_name }}
+          body: '## Changelog'
+          files: '*.zip'
