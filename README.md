@@ -2,6 +2,26 @@
 
 A library for creating native cross-platform GUI apps.
 
+## About this fork
+
+This is the fork of [yue/yue](https://github.com/yue/yue) maintained for
+[moonbit-libyue](https://github.com/NoahLiu/moonbit-libyue), the MoonBit
+bindings of libyue.  On top of upstream it carries:
+
+* Fixes for GTK/Win32 issues found while driving the bindings on real
+  desktops (event windows, layout timing, scrolling coordinates, popovers,
+  Wayland shortcuts, text rendering, task dialogs, WebView2 options, etc.).
+* Distribution tooling changes: the Windows distribution bundles the
+  WebView2 SDK headers and loader DLL, and two typos in the vendored base
+  headers are fixed while packaging.
+* A `prebuilt` workflow that publishes, for every `v*-mbt*` tag, the source
+  distributions together with prebuilt static libraries (Linux x64, Windows
+  x64 and macOS universal) so that users of the bindings skip the local
+  compilation of libyue.
+
+The fork tracks upstream's `main` and rebases on it; fixes are kept as
+small isolated commits to make forwarding them upstream easy.
+
 ## Getting started
 
 * [Documentations](http://libyue.com)
