@@ -423,11 +423,17 @@ int View::DoDragWithOptions(std::vector<Clipboard::Data> objects,
       nullptr, -1, -1);
 
   // Provide drag image if available.
-  if (options.image)
-    gtk_drag_set_icon_pixbuf(
-        priv->drag_context,
-        gdk_pixbuf_animation_get_static_image(options.image->GetNative()),
-        0, 0);
+  // Center the hotspot so the preview image does not hang below-right of
+  // the cursor.
+  if (options.image) {
+    GdkPixbuf* pixbuf =
+        gdk_pixbuf_animation_get_static_image(options.image->GetNative());
+    if (pixbuf)
+      gtk_drag_set_icon_pixbuf(
+          priv->drag_context, pixbuf,
+          gdk_pixbuf_get_width(pixbuf) / 2,
+          gdk_pixbuf_get_height(pixbuf) / 2);
+  }
 
   // Block until the drag operation is done.
   gtk_main();
