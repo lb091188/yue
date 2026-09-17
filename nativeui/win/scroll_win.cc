@@ -124,6 +124,11 @@ void ScrollImpl::Draw(PainterWin* painter, const Rect& dirty) {
 }
 
 bool ScrollImpl::OnMouseWheel(NativeEvent event) {
+  // Dispatch to the child under the cursor first (nested scrolling and
+  // virtual scrolling take priority); only scroll self when unconsumed.
+  ViewImpl* child = FindChildFromPoint(Point(event->l_param));
+  if (child && child->OnMouseWheel(event))
+    return true;
   int16_t delta = static_cast<int16_t>(HIWORD(event->w_param));
   if (event->message == WM_MOUSEWHEEL)
     OnScroll(0, delta);

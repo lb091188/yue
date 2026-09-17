@@ -5,6 +5,7 @@
 #ifndef NATIVEUI_WIN_VIEW_WIN_H_
 #define NATIVEUI_WIN_VIEW_WIN_H_
 
+#include <functional>
 #include <set>
 
 #include "nativeui/cursor.h"
@@ -85,6 +86,11 @@ class ViewImpl : public ResponderImpl {
 
   // Called when the view lost capture.
   virtual void OnCaptureLost();
+
+  // Hook installed by the bindings to consume wheel events for views
+  // that do their own virtual scrolling; receives the raw WM_MOUSEWHEEL
+  // wheel delta and returns true when the event is consumed.
+  std::function<bool(int)> wheel_hook;
 
   /////////////////////////////////////////////////////////////////////////////
   // Drag and drop

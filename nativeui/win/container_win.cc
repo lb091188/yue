@@ -92,10 +92,12 @@ void ContainerImpl::OnMouseLeave(NativeEvent event) {
 }
 
 bool ContainerImpl::OnMouseWheel(NativeEvent event) {
+  // Fall back to the own wheel hook when no child consumed the event
+  // (self-drawn containers may scroll virtually without a hit child).
   ViewImpl* child = FindChildFromPoint(Point(event->l_param));
-  if (child)
-    return child->OnMouseWheel(event);
-  return false;
+  if (child && child->OnMouseWheel(event))
+    return true;
+  return ViewImpl::OnMouseWheel(event);
 }
 
 bool ContainerImpl::OnMouseClick(NativeEvent event) {

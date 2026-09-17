@@ -209,6 +209,11 @@ void ViewImpl::OnMouseLeave(NativeEvent event) {
 }
 
 bool ViewImpl::OnMouseWheel(NativeEvent event) {
+  // Delegate to the wheel hook installed by the bindings (virtual
+  // scrolling of self-drawn views).
+  if (wheel_hook)
+    return wheel_hook(static_cast<int>(
+        static_cast<int16_t>(HIWORD(event->w_param))));
   return false;
 }
 

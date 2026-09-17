@@ -52,9 +52,11 @@ class ContainerImpl : public ViewImpl {
  protected:
   void DrawChild(ViewImpl* child, PainterWin* painter, const Rect& dirty);
 
+  // protected: subclasses dispatch wheel events by hit-testing children.
+  ViewImpl* FindChildFromPoint(const Point& point) const;
+
  private:
   void RefreshParentTree();
-  ViewImpl* FindChildFromPoint(const Point& point) const;
 
   Adapter* adapter_;
 
