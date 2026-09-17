@@ -175,8 +175,19 @@ void Table::AddColumnWithOptions(const std::string& title,
   int column = options.column == -1 ? GetColumnCount() : options.column;
   g_object_set_data(G_OBJECT(renderer), "column", GINT_TO_POINTER(column));
   // Set row height.
-  g_object_set(G_OBJECT(renderer), "height",
-               static_cast<int>(GetRowHeight()), nullptr);
+  // The toggle indicator of some themes (e.g. XFCE) does not respect the
+  // renderer height and would fill the whole cell for large rows; cap the
+  // renderer height for checkbox columns and fix the indicator size.
+  int renderer_height = static_cast<int>(GetRowHeight());
+  if (options.type == Table::ColumnType::Checkbox && renderer_height > 20)
+    renderer_height = 20;
+  g_object_set(G_OBJECT(renderer), "height", renderer_height, nullptr);
+  if (options.type == Table::ColumnType::Checkbox) {
+    GParamSpec *spec = g_object_class_find_property(
+        G_OBJECT_GET_CLASS(renderer), "indicator-size");
+    if (spec != nullptr)
+      g_object_set(G_OBJECT(renderer), "indicator-size", 16, nullptr);
+  }
 
   // Create column.
   auto* tree_column = gtk_tree_view_column_new_with_attributes(
