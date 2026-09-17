@@ -24,7 +24,7 @@ void CreateEventWindow(GtkWidget* widget, NUContainerPrivate* priv) {
   GdkWindowAttr attributes;
   attributes.window_type = GDK_WINDOW_CHILD;
   attributes.x = allocation.x;
-  attributes.y = allocation.x;
+  attributes.y = allocation.y;
   attributes.width = allocation.width;
   attributes.height = allocation.height;
   attributes.wclass = GDK_INPUT_ONLY;
