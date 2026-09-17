@@ -142,8 +142,13 @@ void Container::RemoveChildView(View* view) {
 
 void Container::UpdateChildBounds() {
   dirty_ = false;
+#if defined(OS_LINUX)
+  // GTK requires calculating the root layout even when the container is
+  // not visible yet, otherwise children get allocated with stale bounds.
+#else
   if (!IsVisibleInHierarchy())
     return;
+#endif
   // For root CSS node, calculate the layout before setting bounds.
   if (IsRootYGNode(this)) {
     SizeF size = GetBounds().size();
