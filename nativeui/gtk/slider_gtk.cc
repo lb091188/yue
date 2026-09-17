@@ -39,7 +39,10 @@ NativeView Slider::PlatformCreate() {
 }
 
 void Slider::SetValue(float value) {
-  g_object_set_data(G_OBJECT(GetNative()), "ignore-value-change", this);
+  // Only ignore the change notification when the value really changes,
+  // otherwise a later real user change may be silently swallowed.
+  if (GetValue() != value)
+    g_object_set_data(G_OBJECT(GetNative()), "ignore-value-change", this);
   gtk_range_set_value(GTK_RANGE(GetNative()), value);
 }
 
