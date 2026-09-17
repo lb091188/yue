@@ -66,6 +66,9 @@ if(APPLE)
     -Wno-deprecated-declarations -Wno-unguarded-availability-new)
   # Compile files that disable ARC as a separate library.
   add_library(libyue_noarc STATIC ${YUE_NO_ARC_SOURCES})
+  # CMake prefixes "lib" on makefile platforms; without an explicit output
+  # name the archive would be "liblibyue_noarc.a".
+  set_target_properties(libyue_noarc PROPERTIES OUTPUT_NAME yue_noarc)
   target_include_directories(libyue_noarc PUBLIC
     ${DIST_DIR}/include
     ${DIST_DIR}/include/base/allocator/partition_allocator/src)
