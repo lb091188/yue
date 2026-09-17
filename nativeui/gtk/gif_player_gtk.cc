@@ -45,10 +45,15 @@ void OnHide(GtkWidget* widget, GifPlayer* view) {
 }  // namespace
 
 GifPlayer::GifPlayer() {
-  TakeOverView(gtk_drawing_area_new());
+  // The drawing area must own a GDK window to receive exposure events.
+  GtkWidget* area = gtk_drawing_area_new();
+  gtk_widget_set_has_window(area, TRUE);
+  TakeOverView(area);
   g_signal_connect(GetNative(), "draw", G_CALLBACK(OnDraw), this);
   g_signal_connect(GetNative(), "show", G_CALLBACK(OnShow), this);
   g_signal_connect(GetNative(), "hide", G_CALLBACK(OnHide), this);
+  // Also redraw when the widget gets mapped.
+  g_signal_connect(GetNative(), "map", G_CALLBACK(OnShow), this);
 }
 
 GifPlayer::~GifPlayer() {
