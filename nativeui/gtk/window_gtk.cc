@@ -589,8 +589,18 @@ void Window::SetCapture() {
   if (!window)
     return;
   GdkDevice* device = gtk_get_current_event_device();
-  if (gdk_device_get_source(device) != GDK_SOURCE_MOUSE)
-    device = gdk_device_get_associated_device(device);
+  if (device) {
+    if (gdk_device_get_source(device) != GDK_SOURCE_MOUSE)
+      device = gdk_device_get_associated_device(device);
+  } else {
+    // No current event (e.g. the capture is requested from a timeout
+    // callback while showing a popover): fall back to the default
+    // pointer, otherwise the grab silently fails and the popover loses
+    // its click-outside-to-close behavior.
+    GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(window_));
+    GdkSeat* seat = display ? gdk_display_get_default_seat(display) : nullptr;
+    device = seat ? gdk_seat_get_pointer(seat) : nullptr;
+  }
   if (!device)
     return;
   const GdkEventMask mask = GdkEventMask(GDK_BUTTON_PRESS_MASK |
