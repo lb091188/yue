@@ -128,7 +128,8 @@ void OnGetCookiesFinish(WebKitCookieManager* cookie_manager,
                         Browser::CookiesCallback* callback) {
   GList* cookies = webkit_cookie_manager_get_cookies_finish(
       cookie_manager, result, nullptr);
-  CHECK(cookies);
+  // WebKitGTK 表示空 cookie 列表为 NULL，是合法查询结果：URL 无 cookie
+  // 时不崩溃，按空列表回调（下方循环与 g_list_free_full 均接受 NULL）。
   std::vector<Cookie> ret;
   for (GList* l = cookies; l; l = l->next) {
     SoupCookie* cookie = static_cast<SoupCookie*>(l->data);
