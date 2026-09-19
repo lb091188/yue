@@ -194,6 +194,10 @@ void ContainerImpl::RefreshParentTree() {
 
 ViewImpl* ContainerImpl::FindChildFromPoint(const Point& point) const {
   ViewImpl* result = nullptr;
+  // Children added later are painted on top, so hit testing must iterate in
+  // reverse order too, otherwise overlaid views (e.g. absolute-positioned
+  // masks) never receive mouse events and clicks fall through to the views
+  // underneath them.
   adapter_->ForEach([&](ViewImpl* child) {
     if (!child->is_visible())
       return true;
@@ -203,7 +207,7 @@ ViewImpl* ContainerImpl::FindChildFromPoint(const Point& point) const {
       return false;
     }
     return true;
-  });
+  }, true);
   return result;
 }
 
