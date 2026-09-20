@@ -205,11 +205,31 @@ void PainterWin::DrawCanvasFromRect(Canvas* canvas, const RectF& src,
 void PainterWin::DrawAttributedText(scoped_refptr<AttributedText> text,
                                     const RectF& rect) {
   AttributedTextImpl* str = text->GetNative();
-  graphics_.DrawString(
-      str->text.data(), static_cast<int>(str->text.size()),
-      str->font->GetNative(),
-      ToGdi(ScaleRect(rect, scale_factor_)),
-      &str->format, str->brush.get());
+  Gdiplus::RectF box = ToGdi(ScaleRect(rect, scale_factor_));
+  if (str->runs.empty()) {
+    graphics_.DrawString(
+        str->text.data(), static_cast<int>(str->text.size()),
+        str->font->GetNative(), box,
+        &str->format, str->brush.get());
+    return;
+  }
+  // Ranged attributes: measure and draw through the shared segmented layout.
+  std::vector<GdiTextLine> lines;
+  Gdiplus::SizeF natural;
+  LayoutAttributedText(*str, graphics_, box, &lines, &natural);
+  Gdiplus::StringFormat draw_format(Gdiplus::StringFormat::GenericTypographic());
+  draw_format.SetFormatFlags(str->format.GetFormatFlags());
+  for (const GdiTextLine& line : lines) {
+    for (const GdiTextSegment& seg : line.segments) {
+      int len = seg.end - seg.start;
+      if (len <= 0)
+        continue;
+      graphics_.DrawString(
+          str->text.data() + seg.start, len, seg.font,
+          Gdiplus::PointF(box.X + line.x + seg.x, box.Y + line.y),
+          &draw_format, seg.brush);
+    }
+  }
 }
 
 void PainterWin::MoveToPixel(const PointF& point) {
