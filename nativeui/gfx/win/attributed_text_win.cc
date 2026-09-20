@@ -178,7 +178,7 @@ void LayoutAttributedText(const AttributedTextImpl& impl,
   const bool bounded = std::isfinite(box_w) && box_w < 1e7f;
 
   const Gdiplus::Font* default_font = impl.font->GetNative();
-  const float default_line_h = default_font->GetHeight(g);
+  const float default_line_h = default_font->GetHeight(&g);
 
   // Split into logical lines at '\n' (a trailing '\n' yields an empty last
   // line, matching GDI+ MeasureString behavior after the "add a character"
@@ -219,7 +219,7 @@ void LayoutAttributedText(const AttributedTextImpl& impl,
     // Line height = tallest segment font on this logical line.
     float line_h = 0.f;
     for (const ResolvedSegment& seg : segments)
-      line_h = std::max(line_h, seg.font->GetHeight(g));
+      line_h = std::max(line_h, seg.font->GetHeight(&g));
     // Stream segments into visual lines.
     std::vector<GdiTextSegment> out_segs;
     float x = 0.f;
