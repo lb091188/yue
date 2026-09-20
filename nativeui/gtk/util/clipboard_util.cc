@@ -169,8 +169,12 @@ void FillSelection(GtkSelectionData* selection, const Clipboard::Data& data) {
       if (gchar** uris = g_new(gchar*, data.file_paths().size() + 1)) {
         size_t i;
         for (i = 0; i < data.file_paths().size(); ++i) {
-          uris[i] = g_filename_to_uri(data.file_paths()[i].value().c_str(),
-                                      nullptr, nullptr);
+          // g_filename_to_uri 只接受绝对路径,相对路径返回 NULL(拖拽
+          // URI 列表为空,目标端收不到文件)。先按进程 cwd 补全绝对路径。
+          gchar* absolute = g_canonicalize_filename(
+              data.file_paths()[i].value().c_str(), g_get_current_dir());
+          uris[i] = g_filename_to_uri(absolute, nullptr, nullptr);
+          g_free(absolute);
         }
         uris[i] = nullptr;
         gtk_selection_data_set_uris(selection, uris);

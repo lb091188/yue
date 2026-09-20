@@ -96,13 +96,28 @@ void OnRealize(GtkWidget* widget, View* view) {
     NUSetCursor(widget, view->cursor()->GetNative());
 }
 
-void OnDragEnd(GtkWidget*, GdkDragContext*, NUViewPrivate* priv) {
+void OnDragEnd(GtkWidget*, GdkDragContext* context, NUViewPrivate* priv) {
   if (priv->drag_context) {
-    priv->drag_operation =
-        gdk_drag_context_get_suggested_action(priv->drag_context);
+    // 结束时刻取实际选中动作(suggested 在 end 时常为 0)
+    priv->drag_operation = gdk_drag_context_get_selected_action(context);
+    if (priv->drag_operation == 0)
+      priv->drag_operation =
+          gdk_drag_context_get_suggested_action(context);
     priv->drag_context = nullptr;
     gtk_main_quit();
   }
+}
+
+gboolean OnDragFailed(GtkWidget*, GdkDragContext*, GtkDragResult result,
+                      NUViewPrivate* priv) {
+  // 拖拽失败(目标拒绝/按 Esc):drag-end 仍会发出,但防御性确保嵌套
+  // 主循环退出与状态复位,避免残留状态吞掉后续拖拽。
+  if (priv->drag_context) {
+    priv->drag_operation = 0;
+    priv->drag_context = nullptr;
+    gtk_main_quit();
+  }
+  return FALSE;  // 让 GTK 执行默认的"弹回"动画
 }
 
 void OnDragDataGet(GtkWidget* widget, GdkDragContext* context,
@@ -484,6 +499,7 @@ void View::RegisterDraggedTypes(std::set<Clipboard::Data::Type> types) {
   // Install drag drop event handlers.
   if (!on_drop_installed_) {
     g_signal_connect(view_, "drag-end", G_CALLBACK(OnDragEnd), priv);
+    g_signal_connect(view_, "drag-failed", G_CALLBACK(OnDragFailed), priv);
     g_signal_connect(view_, "drag-data-get", G_CALLBACK(OnDragDataGet), priv);
     g_signal_connect(view_, "drag-motion", G_CALLBACK(OnDragMotion), priv);
     g_signal_connect(view_, "drag-leave", G_CALLBACK(OnDragLeave), priv);
