@@ -420,6 +420,48 @@ bool View::IsMouseDownCanMoveWindow() const {
   return g_object_get_data(G_OBJECT(view_), "draggable");
 }
 
+// Arguments passed into the deferred drag-begin timeout.
+struct DeferredDragArgs {
+  GtkWidget* view;
+  GtkTargetList* targets;
+  GdkDragAction actions;
+  const DragOptions* options;
+};
+
+// Starting the drag directly inside the button-press dispatch keeps the GTK
+// drag machinery in an inconsistent state: the session never completes, no
+// drag-end/drag-failed is emitted and the nested gtk_main() below never
+// quits (the source view then keeps a stale drag_context that swallows
+// every later DoDrag call). Deferring the begin to after the input queue
+// has drained (g_timeout_add(0)) lets the press dispatch finish first.
+static gboolean DeferredDragBegin(gpointer data) {
+  DeferredDragArgs* args = static_cast<DeferredDragArgs*>(data);
+  auto* priv = static_cast<NUViewPrivate*>(
+      g_object_get_data(G_OBJECT(args->view), "private"));
+  priv->drag_context = gtk_drag_begin_with_coordinates(
+      args->view, args->targets, args->actions, 1, nullptr, -1, -1);
+  if (!priv->drag_context) {
+    // Begin refused: release the nested loop, the caller returns NONE.
+    gtk_main_quit();
+    delete args;
+    return G_SOURCE_REMOVE;
+  }
+  // Provide drag image if available.
+  // Center the hotspot so the preview image does not hang below-right of
+  // the cursor.
+  if (args->options->image) {
+    GdkPixbuf* pixbuf = gdk_pixbuf_animation_get_static_image(
+        args->options->image->GetNative());
+    if (pixbuf)
+      gtk_drag_set_icon_pixbuf(
+          priv->drag_context, pixbuf,
+          gdk_pixbuf_get_width(pixbuf) / 2,
+          gdk_pixbuf_get_height(pixbuf) / 2);
+  }
+  delete args;
+  return G_SOURCE_REMOVE;
+}
+
 int View::DoDragWithOptions(std::vector<Clipboard::Data> objects,
                             int operations,
                             const DragOptions& options) {
@@ -433,24 +475,15 @@ int View::DoDragWithOptions(std::vector<Clipboard::Data> objects,
     FillTargetList(targets, objects[i].type(), i);
 
   priv->drag_data = std::move(objects);
-  priv->drag_context = gtk_drag_begin_with_coordinates(
-      view_, targets, static_cast<GdkDragAction>(operations), 1,
-      nullptr, -1, -1);
+  priv->drag_operation = DRAG_OPERATION_NONE;
 
-  // Provide drag image if available.
-  // Center the hotspot so the preview image does not hang below-right of
-  // the cursor.
-  if (options.image) {
-    GdkPixbuf* pixbuf =
-        gdk_pixbuf_animation_get_static_image(options.image->GetNative());
-    if (pixbuf)
-      gtk_drag_set_icon_pixbuf(
-          priv->drag_context, pixbuf,
-          gdk_pixbuf_get_width(pixbuf) / 2,
-          gdk_pixbuf_get_height(pixbuf) / 2);
-  }
+  auto* args = new DeferredDragArgs{
+      view_, targets, static_cast<GdkDragAction>(operations), &options};
+  // Run after pending input events: g_timeout_add(0) fires once the event
+  // queue drains, while the button is still held down.
+  g_timeout_add(0, DeferredDragBegin, args);
 
-  // Block until the drag operation is done.
+  // Block until the drag operation is done (drag-end/drag-failed quit).
   gtk_main();
 
   gtk_target_list_unref(targets);
