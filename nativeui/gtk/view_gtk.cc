@@ -46,6 +46,22 @@ struct NUViewPrivate {
   int drag_operation = -1;
   // The drag data.
   std::vector<Clipboard::Data> drag_data;
+  // DoDrag armed, waiting for the drag threshold in our motion handler.
+  bool drag_armed = false;
+  // Drag image for the armed session (applied on drag-begin).
+  scoped_refptr<Image> drag_pending_image;
+  // The press event captured inside the DoDrag call; carries the timestamp
+  // the X grab needs to override the server's automatic grab on press.
+  GdkEvent* drag_press_event = nullptr;
+  // Targets prepared for the armed session.
+  GtkTargetList* drag_pending_targets = nullptr;
+  // Actions for the armed session.
+  GdkDragAction drag_pending_actions = GDK_ACTION_COPY;
+  // Motion/release handler ids while armed.
+  gulong drag_motion_handler = 0;
+  gulong drag_release_handler = 0;
+  // Whether the source-side drag signals are installed on this view.
+  bool drag_source_installed = false;
 };
 
 // Helper to set cursor for view.
@@ -125,6 +141,70 @@ void OnDragDataGet(GtkWidget* widget, GdkDragContext* context,
                    NUViewPrivate* priv) {
   DCHECK_LT(info, priv->drag_data.size());
   FillSelection(selection, priv->drag_data[info]);
+}
+
+gboolean OnArmedButtonRelease(GtkWidget*, GdkEventButton*,
+                              NUViewPrivate* priv) {
+  // Released without moving past the drag threshold: no session was started.
+  if (priv->drag_armed) {
+    priv->drag_armed = false;
+    priv->drag_pending_image = nullptr;
+    if (priv->drag_press_event) {
+      gdk_event_free(priv->drag_press_event);
+      priv->drag_press_event = nullptr;
+    }
+    if (priv->drag_pending_targets) {
+      gtk_target_list_unref(priv->drag_pending_targets);
+      priv->drag_pending_targets = nullptr;
+    }
+    gtk_main_quit();
+  }
+  return FALSE;
+}
+
+gboolean OnArmedMotion(GtkWidget* widget, GdkEventMotion* event,
+                       NUViewPrivate* priv) {
+  if (!priv->drag_armed || !priv->drag_press_event)
+    return FALSE;
+  double dx = event->x_root - priv->drag_press_event->button.x_root;
+  double dy = event->y_root - priv->drag_press_event->button.y_root;
+  if (dx * dx + dy * dy < 64.0)  // 8px threshold, GTK's own DnD default
+    return FALSE;
+  // Past the threshold: start the session with the real press event so the
+  // pointer grab uses the press timestamp; a NULL event grabs with
+  // GDK_CURRENT_TIME, which the server's automatic press grab rejects.
+  priv->drag_armed = false;
+  GdkDragContext* context = gtk_drag_begin_with_coordinates(
+      widget, priv->drag_pending_targets, priv->drag_pending_actions, 1,
+      priv->drag_press_event, event->x_root, event->y_root);
+  gdk_event_free(priv->drag_press_event);
+  priv->drag_press_event = nullptr;
+  priv->drag_operation = DRAG_OPERATION_NONE;
+  if (context)
+    priv->drag_context = context;
+  if (priv->drag_motion_handler) {
+    g_signal_handler_disconnect(G_OBJECT(widget), priv->drag_motion_handler);
+    priv->drag_motion_handler = 0;
+  }
+  // Provide drag image if available. Center the hotspot so the preview
+  // image does not hang below-right of the cursor.
+  if (context && priv->drag_pending_image) {
+    GdkPixbuf* pixbuf = gdk_pixbuf_animation_get_static_image(
+        priv->drag_pending_image->GetNative());
+    if (pixbuf)
+      gtk_drag_set_icon_pixbuf(context, pixbuf,
+                               gdk_pixbuf_get_width(pixbuf) / 2,
+                               gdk_pixbuf_get_height(pixbuf) / 2);
+  }
+  if (!context) {
+    // Begin refused: release the nested loop, the caller returns NONE.
+    if (priv->drag_pending_targets) {
+      gtk_target_list_unref(priv->drag_pending_targets);
+      priv->drag_pending_targets = nullptr;
+    }
+    gtk_main_quit();
+  }
+  return TRUE;
 }
 
 bool OnDragMotion(GtkWidget* widget, GdkDragContext* context,
@@ -420,55 +500,27 @@ bool View::IsMouseDownCanMoveWindow() const {
   return g_object_get_data(G_OBJECT(view_), "draggable");
 }
 
-// Arguments passed into the deferred drag-begin timeout.
-struct DeferredDragArgs {
-  GtkWidget* view;
-  GtkTargetList* targets;
-  GdkDragAction actions;
-  const DragOptions* options;
-};
-
-// Starting the drag directly inside the button-press dispatch keeps the GTK
-// drag machinery in an inconsistent state: the session never completes, no
-// drag-end/drag-failed is emitted and the nested gtk_main() below never
-// quits (the source view then keeps a stale drag_context that swallows
-// every later DoDrag call). Deferring the begin to after the input queue
-// has drained (g_timeout_add(0)) lets the press dispatch finish first.
-static gboolean DeferredDragBegin(gpointer data) {
-  DeferredDragArgs* args = static_cast<DeferredDragArgs*>(data);
-  auto* priv = static_cast<NUViewPrivate*>(
-      g_object_get_data(G_OBJECT(args->view), "private"));
-  priv->drag_context = gtk_drag_begin_with_coordinates(
-      args->view, args->targets, args->actions, 1, nullptr, -1, -1);
-  if (!priv->drag_context) {
-    // Begin refused: release the nested loop, the caller returns NONE.
-    gtk_main_quit();
-    delete args;
-    return G_SOURCE_REMOVE;
-  }
-  // Provide drag image if available.
-  // Center the hotspot so the preview image does not hang below-right of
-  // the cursor.
-  if (args->options->image) {
-    GdkPixbuf* pixbuf = gdk_pixbuf_animation_get_static_image(
-        args->options->image->GetNative());
-    if (pixbuf)
-      gtk_drag_set_icon_pixbuf(
-          priv->drag_context, pixbuf,
-          gdk_pixbuf_get_width(pixbuf) / 2,
-          gdk_pixbuf_get_height(pixbuf) / 2);
-  }
-  delete args;
-  return G_SOURCE_REMOVE;
-}
-
 int View::DoDragWithOptions(std::vector<Clipboard::Data> objects,
                             int operations,
                             const DragOptions& options) {
   auto* priv = static_cast<NUViewPrivate*>(
       g_object_get_data(G_OBJECT(view_), "private"));
-  if (priv->drag_context)
+  if (priv->drag_context || priv->drag_armed)
     return DRAG_OPERATION_NONE;
+
+  // The DoDrag call happens inside the button-press dispatch. Starting the
+  // drag directly there keeps the GTK drag machinery in an inconsistent
+  // state (the session never completes and no drag-end/drag-failed is ever
+  // emitted). gtk_drag_begin* with a NULL event would not work either: the
+  // pointer grab then uses GDK_CURRENT_TIME, which the server's automatic
+  // press grab rejects. Instead arm motion/release handlers and start the
+  // session after the drag threshold, with the captured press event.
+  GdkEvent* press = gtk_get_current_event();
+  if (!press || press->type != GDK_BUTTON_PRESS) {
+    if (press)
+      gdk_event_free(press);
+    return DRAG_OPERATION_NONE;
+  }
 
   GtkTargetList* targets = gtk_target_list_new(0, 0);
   for (size_t i = 0; i < objects.size(); ++i)
@@ -476,17 +528,49 @@ int View::DoDragWithOptions(std::vector<Clipboard::Data> objects,
 
   priv->drag_data = std::move(objects);
   priv->drag_operation = DRAG_OPERATION_NONE;
+  priv->drag_armed = true;
+  priv->drag_pending_image = options.image;
+  priv->drag_press_event = press;
+  priv->drag_pending_targets = targets;
+  priv->drag_pending_actions = static_cast<GdkDragAction>(operations);
+  priv->drag_motion_handler = g_signal_connect(
+      view_, "motion-notify-event", G_CALLBACK(OnArmedMotion), priv);
+  priv->drag_release_handler = g_signal_connect(
+      view_, "button-release-event", G_CALLBACK(OnArmedButtonRelease), priv);
 
-  auto* args = new DeferredDragArgs{
-      view_, targets, static_cast<GdkDragAction>(operations), &options};
-  // Run after pending input events: g_timeout_add(0) fires once the event
-  // queue drains, while the button is still held down.
-  g_timeout_add(0, DeferredDragBegin, args);
+  // The source-side signals (drag-end/drag-failed/drag-data-get) are only
+  // installed by RegisterDraggedTypes (the receiver API), which a pure drag
+  // source never calls. Without them the target receives empty data from
+  // the default class handler, and drag-end never reaches OnDragEnd so the
+  // nested loop below never quits. Install them here once.
+  if (!priv->drag_source_installed && !on_drop_installed_) {
+    g_signal_connect(view_, "drag-end", G_CALLBACK(OnDragEnd), priv);
+    g_signal_connect(view_, "drag-failed", G_CALLBACK(OnDragFailed), priv);
+    g_signal_connect(view_, "drag-data-get", G_CALLBACK(OnDragDataGet), priv);
+  }
+  priv->drag_source_installed = true;
 
-  // Block until the drag operation is done (drag-end/drag-failed quit).
+  // Block until the drag ends (drag-end/drag-failed/armed-release quit).
   gtk_main();
 
-  gtk_target_list_unref(targets);
+  if (priv->drag_motion_handler) {
+    g_signal_handler_disconnect(G_OBJECT(view_), priv->drag_motion_handler);
+    priv->drag_motion_handler = 0;
+  }
+  if (priv->drag_release_handler) {
+    g_signal_handler_disconnect(G_OBJECT(view_), priv->drag_release_handler);
+    priv->drag_release_handler = 0;
+  }
+  if (priv->drag_press_event) {
+    gdk_event_free(priv->drag_press_event);
+    priv->drag_press_event = nullptr;
+  }
+  if (priv->drag_pending_targets) {
+    gtk_target_list_unref(priv->drag_pending_targets);
+    priv->drag_pending_targets = nullptr;
+  }
+  priv->drag_armed = false;
+  priv->drag_pending_image = nullptr;
   priv->drag_data.clear();
   return priv->drag_operation;
 }
@@ -541,6 +625,7 @@ void View::RegisterDraggedTypes(std::set<Clipboard::Data::Type> types) {
                      G_CALLBACK(OnDragDataReceived), priv);
     on_drop_installed_ = true;
   }
+  priv->drag_source_installed = true;
 }
 
 void View::PlatformSetCursor(Cursor* cursor) {
