@@ -22,9 +22,12 @@ void Container::PlatformDestroy() {
 
 void Container::PlatformInstallMouseClickEvents() {
   View::PlatformInstallMouseClickEvents();
+  // 滚轮(button 4/5)必须选 GDK_SCROLL_MASK:只装 ButtonPress 会让容器
+  // 窗口截走滚轮事件且 GDK 不再向祖先 GtkScrolledWindow 传播,自绘内容
+  // 盖住的滚动区(图表/表格画布)滚轮失效
   nu_container_add_event_mask(
       NU_CONTAINER(GetNative()),
-      GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK);
+      GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK);
 }
 
 void Container::PlatformInstallMouseMoveEvents() {
