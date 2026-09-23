@@ -53,6 +53,29 @@ decltype(&::TaskDialogIndirect) GetTaskDialogIndirect() {
   return task_dialog_indirect;
 }
 
+// Classic MessageBoxW fallback for exes without a v6 manifest: it is always
+// available and covers the common cases (icon + up to two buttons). Returns
+// a TaskDialog-style result: a kIDStart-based button ID, or 0 for cancel.
+int RunClassicMessageBox(const TASKDIALOGCONFIG* config) {
+  UINT type = 0;
+  if (config->pszMainIcon == TD_INFORMATION_ICON)
+    type |= MB_ICONINFORMATION;
+  else if (config->pszMainIcon == TD_WARNING_ICON)
+    type |= MB_ICONWARNING;
+  else if (config->pszMainIcon == TD_ERROR_ICON)
+    type |= MB_ICONERROR;
+  const bool cancelable = config->cButtons >= 2;
+  type |= cancelable ? MB_OKCANCEL : MB_OK;
+  const int res = ::MessageBoxW(
+      config->hwndParent,
+      config->pszContent ? config->pszContent : L"",
+      config->pszWindowTitle ? config->pszWindowTitle : L"",
+      type);
+  if (res == IDOK && cancelable && config->pButtons)
+    return config->pButtons[0].nButtonID;
+  return 0;
+}
+
 }  // namespace
 
 struct MessageBoxImpl : base::PlatformThread::Delegate {
@@ -98,6 +121,8 @@ struct MessageBoxImpl : base::PlatformThread::Delegate {
     auto task_dialog_indirect = GetTaskDialogIndirect();
     if (task_dialog_indirect != nullptr)
       task_dialog_indirect(&config, &res, nullptr, &flag);
+    else
+      res = RunClassicMessageBox(&config);
     // Always bounce to the UI thread: OnClose emits signals and must never
     // run on this background thread.
     MessageLoop::PostTask([=]() {
@@ -141,6 +166,8 @@ int MessageBox::PlatformRunForWindow(Window* window) {
   // See GetTaskDialogIndirect for why the version has to be checked.
   if (auto task_dialog_indirect = GetTaskDialogIndirect())
     task_dialog_indirect(&box_->config, &res, nullptr, &flag);
+  else
+    res = RunClassicMessageBox(&box_->config);
   return (res == 0 || res == IDCANCEL) ? cancel_response_ : res - kIDStart;
 }
 
