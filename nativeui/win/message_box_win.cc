@@ -66,9 +66,19 @@ int RunClassicMessageBox(const TASKDIALOGCONFIG* config) {
     type |= MB_ICONERROR;
   const bool cancelable = config->cButtons >= 2;
   type |= cancelable ? MB_OKCANCEL : MB_OK;
+  // TaskDialog 的主文字在 pszMainInstruction、补充文字在 pszContent;
+  // MessageBoxW 只有单行文本,两者拼起来(缺失字段跳过)
+  std::wstring text;
+  if (config->pszMainInstruction)
+    text += config->pszMainInstruction;
+  if (config->pszContent) {
+    if (!text.empty())
+      text += L"\n\n";
+    text += config->pszContent;
+  }
   const int res = ::MessageBoxW(
       config->hwndParent,
-      config->pszContent ? config->pszContent : L"",
+      text.empty() ? L"" : text.c_str(),
       config->pszWindowTitle ? config->pszWindowTitle : L"",
       type);
   if (res == IDOK && cancelable && config->pButtons)
