@@ -24,6 +24,35 @@ namespace {
 // a large number to avoid conflicts with Windows.
 const int kIDStart = 100;
 
+// TaskDialogIndirect is only exported by ordinal 345 of v6 comctl32. Exes
+// without a v6 manifest load the v5.82 comctl32, whose export table also has
+// an ordinal 345 that points to an unrelated function — calling it crashes
+// the process (verified on Win10 19045: GetProcAddress resolves a non-null
+// garbage pointer). Only resolve the ordinal when the loaded comctl32 is v6.
+decltype(&::TaskDialogIndirect) GetTaskDialogIndirect() {
+  struct DllVersionInfo {
+    ULONG cbSize;
+    DWORD dwMajorVersion;
+    DWORD dwMinorVersion;
+    DWORD dwBuildNumber;
+  };
+  using DllGetVersionFunc = HRESULT(WINAPI *)(DllVersionInfo *);
+  static const auto dll_get_version =
+      reinterpret_cast<DllGetVersionFunc>(::GetProcAddress(
+          ::GetModuleHandleW(L"comctl32.dll"), "DllGetVersion"));
+  static const auto task_dialog_indirect = [&]() -> decltype(&::TaskDialogIndirect) {
+    DllVersionInfo version = {};
+    version.cbSize = sizeof(version);
+    if (dll_get_version == nullptr || FAILED(dll_get_version(&version)) ||
+        version.dwMajorVersion < 6)
+      return nullptr;
+    return reinterpret_cast<decltype(&::TaskDialogIndirect)>(
+        ::GetProcAddress(::GetModuleHandleW(L"comctl32.dll"),
+                         MAKEINTRESOURCEA(345)));
+  }();
+  return task_dialog_indirect;
+}
+
 }  // namespace
 
 struct MessageBoxImpl : base::PlatformThread::Delegate {
@@ -65,18 +94,12 @@ struct MessageBoxImpl : base::PlatformThread::Delegate {
   void ThreadMain() {
     BOOL flag = FALSE;
     int res = 0;
-    // TaskDialogIndirect is only exported by ordinal 345 of v6 comctl32;
-    // resolve it dynamically so exes without a v6 manifest do not crash
-    // on load, and behave as cancelled when it is unavailable.
-    static const auto task_dialog_indirect =
-        reinterpret_cast<decltype(&::TaskDialogIndirect)>(
-            ::GetProcAddress(::GetModuleHandleW(L"comctl32.dll"),
-                             MAKEINTRESOURCEA(345)));
-    if (task_dialog_indirect == nullptr) {
-      box->OnClose();
-      return;
-    }
-    task_dialog_indirect(&config, &res, nullptr, &flag);
+    // See GetTaskDialogIndirect for why the version has to be checked.
+    auto task_dialog_indirect = GetTaskDialogIndirect();
+    if (task_dialog_indirect != nullptr)
+      task_dialog_indirect(&config, &res, nullptr, &flag);
+    // Always bounce to the UI thread: OnClose emits signals and must never
+    // run on this background thread.
     MessageLoop::PostTask([=]() {
       if (res == 0 || res == IDCANCEL)
         box->OnClose();
@@ -115,12 +138,8 @@ int MessageBox::PlatformRunForWindow(Window* window) {
   box_->config.hwndParent = window ? window->GetNative()->hwnd() : NULL;
   int res = cancel_response_;
   BOOL flag = FALSE;
-  // See the comment in ThreadMain for the dynamic resolution.
-  static const auto task_dialog_indirect =
-      reinterpret_cast<decltype(&::TaskDialogIndirect)>(
-          ::GetProcAddress(::GetModuleHandleW(L"comctl32.dll"),
-                           MAKEINTRESOURCEA(345)));
-  if (task_dialog_indirect != nullptr)
+  // See GetTaskDialogIndirect for why the version has to be checked.
+  if (auto task_dialog_indirect = GetTaskDialogIndirect())
     task_dialog_indirect(&box_->config, &res, nullptr, &flag);
   return (res == 0 || res == IDCANCEL) ? cancel_response_ : res - kIDStart;
 }
