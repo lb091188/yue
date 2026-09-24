@@ -88,7 +88,23 @@ void ScrollImpl::Layout() {
       content_alloc.set_width(viewport_size.width());
     if (content_alloc.height() < viewport_size.height())
       content_alloc.set_height(viewport_size.height());
-    delegate_->GetContentView()->GetNative()->SizeAllocate(content_alloc);
+    // A pure scroll translation must not run the content container's full
+    // SizeAllocate cascade (Layout -> UpdateChildBounds recursion), which
+    // re-enters per child container and dominated scroll jank; shift the
+    // recorded allocations and the native HWNDs directly instead. Size
+    // changes (viewport growth, natural content size) still take the full
+    // path.
+    ViewImpl* content = delegate_->GetContentView()->GetNative();
+    const Rect old_alloc = content->size_allocation();
+    const Vector2d delta(content_alloc.x() - old_alloc.x(),
+                         content_alloc.y() - old_alloc.y());
+    if (!old_alloc.IsEmpty() &&
+        content_alloc.size() == old_alloc.size() &&
+        !delta.IsZero()) {
+      content->TranslateAllocation(delta);
+    } else {
+      content->SizeAllocate(content_alloc);
+    }
   }
 }
 

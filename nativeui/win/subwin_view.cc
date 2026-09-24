@@ -28,15 +28,41 @@ SubwinView::~SubwinView() {
 }
 
 void SubwinView::SizeAllocate(const Rect& size_allocation) {
+  const Rect old_alloc = ViewImpl::size_allocation();
   ViewImpl::SizeAllocate(size_allocation);
 
   // Manually hide the control if it is not visible, this is necessary because
   // the control may be inside a Scroll.
   Rect clipped = GetClippedRect();
+  Rect rel(clipped);
+  rel.Offset(-size_allocation.x(), -size_allocation.y());
+
+  // Pure-translation fast path: when neither the size nor the clipped
+  // rect (relative to the view's origin) changed and the window is being
+  // shown either way, moving the window is enough — SetWindowPos carries
+  // the window surface to the new position, so no region/show/redraw
+  // work is needed. The full path otherwise runs per native control per
+  // scroll frame and dominates scroll jank (measured 20ms+ per resync
+  // on a form-heavy page).
+  bool pure_translation =
+      !old_alloc.IsEmpty() &&
+      size_allocation.size() == old_alloc.size() &&
+      !clipped.IsEmpty() && shown_ && rel == clip_rel_;
+  clip_rel_ = rel;
+  if (pure_translation) {
+    ::SetWindowPos(hwnd(), NULL,
+                   size_allocation.x(), size_allocation.y(),
+                   size_allocation.width(), size_allocation.height(),
+                   SWP_NOACTIVATE | SWP_NOZORDER);
+    return;
+  }
+
   if (clipped.IsEmpty()) {
+    shown_ = false;
     ::ShowWindow(hwnd(), SW_HIDE);
     return;
   }
+  shown_ = true;
 
   // Implement clipping by setting window region.
   clipped.Offset(-size_allocation.x(), -size_allocation.y());
@@ -57,6 +83,16 @@ void SubwinView::SizeAllocate(const Rect& size_allocation) {
                size_allocation.width(), size_allocation.height(),
                SWP_NOACTIVATE | SWP_NOZORDER);
   RedrawWindow(hwnd(), NULL, NULL, RDW_INVALIDATE | RDW_ALLCHILDREN);
+}
+
+void SubwinView::TranslateAllocation(const Vector2d& delta) {
+  if (delta.IsZero())
+    return;
+  // Reuse SizeAllocate: for a pure scroll translation it takes the fast
+  // path (a single SetWindowPos), and controls crossing the viewport
+  // edge correctly fall through to the region update.
+  SizeAllocate(Rect(size_allocation().origin() + delta,
+                    size_allocation().size()));
 }
 
 void SubwinView::SetParent(ViewImpl* parent) {

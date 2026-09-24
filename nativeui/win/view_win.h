@@ -123,6 +123,12 @@ class ViewImpl : public ResponderImpl {
   void set_size_allocation(const Rect& bounds) { size_allocation_ = bounds; }
   Rect size_allocation() const { return size_allocation_; }
 
+  // Shift this view's (and, for containers/subwin controls, its subtree's)
+  // allocation by |delta| without running any layout — the dedicated path
+  // for scroll translations, where nothing changes but the offset. Must
+  // not trigger yoga recalculation or the UpdateChildBounds cascade.
+  virtual void TranslateAllocation(const Vector2d& delta);
+
   // Whether the view is visible.
   bool is_visible() const { return is_visible_; }
 

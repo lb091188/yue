@@ -32,6 +32,7 @@ class ContainerImpl : public ViewImpl {
 
   // ViewImpl:
   void SizeAllocate(const Rect& size_allocation) override;
+  void TranslateAllocation(const Vector2d& delta) override;
   UINT HitTest(const Point& point) const override;
   void SetParent(ViewImpl* parent) override;
   void BecomeContentView(WindowImpl* parent) override;

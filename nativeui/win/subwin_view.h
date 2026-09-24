@@ -20,6 +20,7 @@ class SubwinView : public Win32Window, public ViewImpl {
   ~SubwinView() override;
 
   void SizeAllocate(const Rect& size_allocation) override;
+  void TranslateAllocation(const Vector2d& delta) override;
   void SetParent(ViewImpl* parent) override;
   void BecomeContentView(WindowImpl* parent) override;
   void Invalidate(const Rect& dirty) override;
@@ -73,6 +74,14 @@ class SubwinView : public Win32Window, public ViewImpl {
                                   UINT message,
                                   WPARAM w_param,
                                   LPARAM l_param);
+
+  // The clipped rect relative to this view's origin, as of the last
+  // SizeAllocate — used by the pure-translation fast path to skip the
+  // region/show/redraw work when scrolling only moves the control.
+  Rect clip_rel_;
+
+  // Whether the window was left visible by the last SizeAllocate.
+  bool shown_ = false;
 
   // Should emulate the transparent background.
   bool transprent_background_ = false;

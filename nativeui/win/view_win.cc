@@ -346,6 +346,12 @@ void ViewImpl::Invalidate() {
   Invalidate(size_allocation_);
 }
 
+void ViewImpl::TranslateAllocation(const Vector2d& delta) {
+  if (delta.IsZero())
+    return;
+  size_allocation_.Offset(delta);
+}
+
 void ViewImpl::ParentChanged() {
   VisibilityChanged();
   // Scale the bounds after moving to a new parent.
