@@ -14,8 +14,15 @@ namespace nu {
 // static
 const DWORD Win32Window::kWindowDefaultChildStyle =
     WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
-const DWORD Win32Window::kWindowDefaultStyle =
-    WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
+// No WS_CLIPCHILDREN on the main window style: with it the parent surface
+// is never painted under child-window rects, so after native child HWNDs
+// move (layout resync, page switches), the stale pixels at their old
+// positions can never be repainted — the parent's paint DC is clipped to
+// the *current* child set and old/new rects interleave (unreachable seams,
+// measured as horizontal streaks on Win10). DWM composites child surfaces
+// above the parent surface, so painting underneath children is safe; the
+// only cost is repainting areas covered by children.
+const DWORD Win32Window::kWindowDefaultStyle = WS_OVERLAPPEDWINDOW;
 
 Win32Window::Win32Window(std::wstring_view class_name, HWND parent,
                          DWORD window_style, DWORD window_ex_style)
