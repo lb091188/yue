@@ -156,8 +156,23 @@ void Container::UpdateChildBounds() {
   }
   for (int i = 0; i < ChildCount(); ++i) {
     View* child = ChildAt(i);
-    if (child->IsVisibleInHierarchy())
+    if (child->IsVisibleInHierarchy()) {
       child->SetBounds(GetYGNodeBounds(child->node()));
+      // Recurse unconditionally: a child container whose size did not
+      // change early-returns from SetBounds and never cascades
+      // SizeAllocate -> Layout, so its own subtree would miss this
+      // allocation round entirely (measured: pages toggled via set_visible
+      // stopped repainting as a whole block on Windows). The child bounds
+      // read here always come from the latest root-level layout, so the
+      // recursion only re-distributes fresh values and never invents
+      // constraints of its own. Do NOT recalculate per-container here:
+      // forcing YGNodeCalculateLayout with the container's own (possibly
+      // still-zero) bounds as the owner size pushes zeros into the whole
+      // subtree during early layout rounds (measured: freshly shown pages
+      // rendered completely blank on Windows).
+      if (child->IsContainer())
+        static_cast<Container*>(child)->UpdateChildBounds();
+    }
   }
 }
 
