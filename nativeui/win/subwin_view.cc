@@ -58,10 +58,14 @@ void SubwinView::SizeAllocate(const Rect& size_allocation) {
   }
 
   if (clipped.IsEmpty()) {
-    shown_ = false;
-    ::ShowWindow(hwnd(), SW_HIDE);
+    if (shown_) {
+      shown_ = false;
+      ::ShowWindow(hwnd(), SW_HIDE);
+    }
     return;
   }
+  if (!shown_)
+    ::ShowWindow(hwnd(), SW_SHOWNOACTIVATE);
   shown_ = true;
 
   // Implement clipping by setting window region.
@@ -77,7 +81,6 @@ void SubwinView::SizeAllocate(const Rect& size_allocation) {
     SetWindowRgn(hwnd(), NULL, FALSE);
   }
 
-  ::ShowWindow(hwnd(), SW_SHOWNOACTIVATE);
   SetWindowPos(hwnd(), NULL,
                size_allocation.x(), size_allocation.y(),
                size_allocation.width(), size_allocation.height(),

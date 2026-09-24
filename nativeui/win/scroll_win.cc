@@ -22,9 +22,10 @@ ScrollImpl::ScrollImpl(Scroll* delegate)
 ScrollImpl::~ScrollImpl() {}
 
 void ScrollImpl::SetOrigin(const Vector2d& origin) {
+  const Vector2d old = origin_;
   UpdateOrigin(origin);
+  ScrollPixels(origin_ - old);
   Layout();
-  Invalidate();
 }
 
 void ScrollImpl::SetContentSize(const Size& size) {
@@ -55,8 +56,26 @@ Rect ScrollImpl::GetViewportRect() const {
 }
 
 void ScrollImpl::OnScroll(int x, int y) {
+  const Vector2d old = origin_;
   if (UpdateOrigin(origin_ + Vector2d(x, y))) {
+    ScrollPixels(origin_ - old);
     Layout();
+  }
+}
+
+void ScrollImpl::ScrollPixels(const Vector2d& d) {
+  // Scroll by blitting the pixels that are already on screen (children
+  // included) and invalidating only the exposed band. A full-viewport
+  // invalidate repaints the whole page per scroll frame and janks badly
+  // on content-heavy pages (forms, component galleries) — especially so
+  // without WS_CLIPCHILDREN, where the parent also paints under every
+  // native child rect.
+  if (window() && !d.IsZero()) {
+    Rect vp = GetViewportRect() + size_allocation().OffsetFromOrigin();
+    RECT clip = {vp.x(), vp.y(), vp.right(), vp.bottom()};
+    ::ScrollWindowEx(window()->hwnd(), d.x(), d.y(), &clip, &clip,
+                     nullptr, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE);
+  } else {
     Invalidate();
   }
 }

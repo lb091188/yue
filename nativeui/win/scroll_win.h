@@ -51,6 +51,9 @@ class ScrollImpl : public ContainerImpl,
   void UpdateScrollbar();
   bool UpdateOrigin(Vector2d new_origin);
   Rect GetScrollbarRect(bool vertical) const;
+  // Blit the already-drawn viewport pixels by the scroll delta (children
+  // included) and invalidate only the exposed band.
+  void ScrollPixels(const Vector2d& d);
 
   Size content_size_;
   // When false, the scroll range follows the content's natural size.
