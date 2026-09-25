@@ -22,11 +22,9 @@ ScrollImpl::ScrollImpl(Scroll* delegate)
 ScrollImpl::~ScrollImpl() {}
 
 void ScrollImpl::SetOrigin(const Vector2d& origin) {
-  const Vector2d old = origin_;
   UpdateOrigin(origin);
-  ScrollPixels(origin_ - old);
   Layout();
-  PaintViewportNow();
+  Invalidate();
 }
 
 void ScrollImpl::SetContentSize(const Size& size) {
@@ -57,43 +55,10 @@ Rect ScrollImpl::GetViewportRect() const {
 }
 
 void ScrollImpl::OnScroll(int x, int y) {
-  const Vector2d old = origin_;
   if (UpdateOrigin(origin_ + Vector2d(x, y))) {
-    ScrollPixels(origin_ - old);
     Layout();
-    PaintViewportNow();
-  }
-}
-
-void ScrollImpl::ScrollPixels(const Vector2d& d) {
-  // Scroll by blitting the pixels that are already on screen (children
-  // included) and invalidating only the exposed band. A full-viewport
-  // invalidate repaints the whole page per scroll frame and janks badly
-  // on content-heavy pages (forms, component galleries) — especially so
-  // without WS_CLIPCHILDREN, where the parent also paints under every
-  // native child rect.
-  if (window() && !d.IsZero()) {
-    Rect vp = GetViewportRect() + size_allocation().OffsetFromOrigin();
-    RECT clip = {vp.x(), vp.y(), vp.right(), vp.bottom()};
-    ::ScrollWindowEx(window()->hwnd(), d.x(), d.y(), &clip, &clip,
-                     nullptr, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE);
-  } else {
     Invalidate();
   }
-}
-
-void ScrollImpl::PaintViewportNow() {
-  // The band invalidated by the blit must be painted AFTER Layout(): the
-  // repaint walks children at their recorded allocations, so painting it
-  // before the allocations shift bakes self-drawn children into the surface
-  // at their pre-scroll positions, and later blits carry those baked images
-  // across the page (real-machine: trails of ghost input boxes and button
-  // edges persisting after scrolling stops). Painting synchronously here
-  // also keeps the surface fresh for the next blit — input messages outrank
-  // WM_PAINT, so a fast wheel flick would otherwise blit the not-yet-
-  // repainted band of the previous frame (tearing on hard flicks).
-  if (window())
-    ::UpdateWindow(window()->hwnd());
 }
 
 void ScrollImpl::Layout() {
@@ -123,23 +88,7 @@ void ScrollImpl::Layout() {
       content_alloc.set_width(viewport_size.width());
     if (content_alloc.height() < viewport_size.height())
       content_alloc.set_height(viewport_size.height());
-    // A pure scroll translation must not run the content container's full
-    // SizeAllocate cascade (Layout -> UpdateChildBounds recursion), which
-    // re-enters per child container and dominated scroll jank; shift the
-    // recorded allocations and the native HWNDs directly instead. Size
-    // changes (viewport growth, natural content size) still take the full
-    // path.
-    ViewImpl* content = delegate_->GetContentView()->GetNative();
-    const Rect old_alloc = content->size_allocation();
-    const Vector2d delta(content_alloc.x() - old_alloc.x(),
-                         content_alloc.y() - old_alloc.y());
-    if (!old_alloc.IsEmpty() &&
-        content_alloc.size() == old_alloc.size() &&
-        !delta.IsZero()) {
-      content->TranslateAllocation(delta);
-    } else {
-      content->SizeAllocate(content_alloc);
-    }
+    delegate_->GetContentView()->GetNative()->SizeAllocate(content_alloc);
   }
 }
 

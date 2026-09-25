@@ -19,20 +19,6 @@ void ContainerImpl::SizeAllocate(const Rect& size_allocation) {
     adapter_->Layout();
 }
 
-void ContainerImpl::TranslateAllocation(const Vector2d& delta) {
-  if (delta.IsZero())
-    return;
-  // Scroll translation: shift the recorded allocation and propagate to the
-  // subtree without any layout — running the full UpdateChildBounds cascade
-  // here is quadratic-to-exponential in tree depth (each child container's
-  // SetBounds re-enters Layout) and dominated scroll jank on form pages.
-  ViewImpl::TranslateAllocation(delta);
-  adapter_->ForEach([&delta](ViewImpl* child) {
-    child->TranslateAllocation(delta);
-    return true;
-  });
-}
-
 UINT ContainerImpl::HitTest(const Point& point) const {
   ViewImpl* child = FindChildFromPoint(point);
   if (child)
