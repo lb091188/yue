@@ -47,6 +47,12 @@ class SubwinView : public Win32Window, public ViewImpl {
   // Change focus behavior.
   void set_switch_focus_on_tab(bool s) { switch_focus_on_tab_ = s; }
 
+  // Mark that this control scrolls its own content with the wheel (multiline
+  // edits). Single-line subwin controls swallow WM_MOUSEWHEEL without
+  // scrolling anything and never bubble it, turning into wheel dead zones
+  // inside a Scroll.
+  void set_wants_mouse_wheel(bool w) { wants_wheel_ = w; }
+
   CR_BEGIN_MSG_MAP_EX(SubwinView, Win32Window)
     CR_MSG_WM_CHAR(OnChar)
     CR_MSG_WM_SETCURSOR(OnSetCursor)
@@ -88,6 +94,9 @@ class SubwinView : public Win32Window, public ViewImpl {
 
   // Should switch focus when TAB is pressed.
   bool switch_focus_on_tab_ = true;
+
+  // Whether the control scrolls its own content with the wheel.
+  bool wants_wheel_ = false;
 
   base::win::ScopedGDIObject<HBRUSH> bg_brush_;
   WNDPROC proc_;

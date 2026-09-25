@@ -20,6 +20,10 @@ SubwinView::SubwinView(View* delegate,
                   window_style, window_ex_style),
       ViewImpl(ControlType::Subwin, delegate),
       proc_(SetWindowProc(hwnd(), &WndProc)) {
+  // Only multiline edit controls scroll their own content with the wheel;
+  // the ES_MULTILINE bit is meaningless for other subwin controls, so the
+  // plain bit test is enough.
+  wants_wheel_ = (window_style & ES_MULTILINE) != 0;
   // Apply default font.
   SetFont(font());
 }
@@ -224,10 +228,14 @@ LRESULT SubwinView::OnKeyEvent(UINT message, WPARAM w_param, LPARAM l_param) {
 LRESULT SubwinView::OnMouseWheelFromSelf(
     UINT message, WPARAM w_param, LPARAM l_param) {
   if (window()) {
-    // Pass the event to window if not happened inside the control.
+    // Pass the event to window if not happened inside the control, or when
+    // the control cannot scroll itself: the EDIT/RichEdit def-window-proc
+    // does nothing for single-line controls and never bubbles the wheel to
+    // the parent, so a single-line Entry inside a Scroll eats the event and
+    // the page stops scrolling under it (form pages are mostly Entries).
     POINT p = { CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param) };
     ::ScreenToClient(window()->hwnd(), &p);
-    if (!size_allocation().Contains(Point(p))) {
+    if (!size_allocation().Contains(Point(p)) || !wants_wheel_) {
       ::SendMessage(window()->hwnd(), message, w_param, l_param);
       return 0;
     }
