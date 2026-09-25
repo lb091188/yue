@@ -75,6 +75,12 @@ void ScrollImpl::ScrollPixels(const Vector2d& d) {
     RECT clip = {vp.x(), vp.y(), vp.right(), vp.bottom()};
     ::ScrollWindowEx(window()->hwnd(), d.x(), d.y(), &clip, &clip,
                      nullptr, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE);
+    // Input messages outrank WM_PAINT, so a fast wheel flick queues several
+    // scrolls before any paint: each later blit would read the not yet
+    // repainted exposed band of the previous one and bake stale pixels into
+    // the viewport (real-machine tearing on hard flicks). Paint the exposed
+    // band synchronously so the surface is always fresh for the next blit.
+    ::UpdateWindow(window()->hwnd());
   } else {
     Invalidate();
   }
