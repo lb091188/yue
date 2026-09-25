@@ -26,6 +26,7 @@ void ScrollImpl::SetOrigin(const Vector2d& origin) {
   UpdateOrigin(origin);
   ScrollPixels(origin_ - old);
   Layout();
+  PaintViewportNow();
 }
 
 void ScrollImpl::SetContentSize(const Size& size) {
@@ -60,6 +61,7 @@ void ScrollImpl::OnScroll(int x, int y) {
   if (UpdateOrigin(origin_ + Vector2d(x, y))) {
     ScrollPixels(origin_ - old);
     Layout();
+    PaintViewportNow();
   }
 }
 
@@ -75,15 +77,23 @@ void ScrollImpl::ScrollPixels(const Vector2d& d) {
     RECT clip = {vp.x(), vp.y(), vp.right(), vp.bottom()};
     ::ScrollWindowEx(window()->hwnd(), d.x(), d.y(), &clip, &clip,
                      nullptr, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE);
-    // Input messages outrank WM_PAINT, so a fast wheel flick queues several
-    // scrolls before any paint: each later blit would read the not yet
-    // repainted exposed band of the previous one and bake stale pixels into
-    // the viewport (real-machine tearing on hard flicks). Paint the exposed
-    // band synchronously so the surface is always fresh for the next blit.
-    ::UpdateWindow(window()->hwnd());
   } else {
     Invalidate();
   }
+}
+
+void ScrollImpl::PaintViewportNow() {
+  // The band invalidated by the blit must be painted AFTER Layout(): the
+  // repaint walks children at their recorded allocations, so painting it
+  // before the allocations shift bakes self-drawn children into the surface
+  // at their pre-scroll positions, and later blits carry those baked images
+  // across the page (real-machine: trails of ghost input boxes and button
+  // edges persisting after scrolling stops). Painting synchronously here
+  // also keeps the surface fresh for the next blit — input messages outrank
+  // WM_PAINT, so a fast wheel flick would otherwise blit the not-yet-
+  // repainted band of the previous frame (tearing on hard flicks).
+  if (window())
+    ::UpdateWindow(window()->hwnd());
 }
 
 void ScrollImpl::Layout() {

@@ -54,6 +54,9 @@ class ScrollImpl : public ContainerImpl,
   // Blit the already-drawn viewport pixels by the scroll delta (children
   // included) and invalidate only the exposed band.
   void ScrollPixels(const Vector2d& d);
+  // Synchronously paint the invalidated band — must run after Layout()
+  // shifted the allocations, see the definition for why.
+  void PaintViewportNow();
 
   Size content_size_;
   // When false, the scroll range follows the content's natural size.
