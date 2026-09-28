@@ -1,0 +1,59 @@
+diff --git a/yoga/YGLayout.h b/yoga/YGLayout.h
+index 166eabb6..f056a5fa 100644
+--- a/yoga/YGLayout.h
++++ b/yoga/YGLayout.h
+@@ -28,6 +28,12 @@ public:
+   uint32_t computedFlexBasisGeneration = 0;
+   YGFloatOptional computedFlexBasis = {};
+ 
++  // Set by the display:none zero-out pass and consumed once by the flex
++  // basis computation: a node re-shown via the flex shorthand must get its
++  // basis from a content measure again, otherwise the shorthand's basis-0
++  // sticks and the node collapses to zero under an auto-height owner.
++  bool zeroedByDisplayNone = false;
++
+   // Instead of recomputing the entire layout every single time, we cache some
+   // information to break early when nothing changed
+   uint32_t generationCount = 0;
+diff --git a/yoga/Yoga.cpp b/yoga/Yoga.cpp
+index da34f240..093c0bfd 100644
+--- a/yoga/Yoga.cpp
++++ b/yoga/Yoga.cpp
+@@ -1227,8 +1227,28 @@ static void YGNodeComputeFlexBasisForChild(
+   YGMeasureMode childWidthMeasureMode;
+   YGMeasureMode childHeightMeasureMode;
+ 
++  const YGValue resolvedBasisValue = child->resolveFlexBasisPtr();
++  const bool zeroedWhileNone = child->getLayout().zeroedByDisplayNone;
++  child->getLayout().zeroedByDisplayNone = false;
++  // A node re-shown after display:none had its layout wiped (zeroed out).
++  // Letting the flex shorthand's derived basis-0 stick here would collapse
++  // the node to zero height for good under an auto-height owner: the
++  // shorthand is the one path whose computed flex basis never gets
++  // recomputed from content again. For that first round after the wipe,
++  // measure the content instead. Nodes with an explicit flexBasis style
++  // keep the original behavior in full.
++  const YGStyle& childStyle =
++      static_cast<const YGNode*>(child)->getStyle();
++  const bool basisFromFlexShorthand =
++      !childStyle.flex().isUndefined() &&
++      (childStyle.flexBasis().isUndefined() ||
++       childStyle.flexBasis().isAuto());
+   const YGFloatOptional resolvedFlexBasis =
+-      YGResolveValue(child->resolveFlexBasisPtr(), mainAxisownerSize);
++      (zeroedWhileNone && basisFromFlexShorthand &&
++       resolvedBasisValue.unit == YGUnitPoint &&
++       resolvedBasisValue.value == 0.0f)
++          ? YGFloatOptional{}
++          : YGResolveValue(resolvedBasisValue, mainAxisownerSize);
+   const bool isRowStyleDimDefined =
+       YGNodeIsStyleDimDefined(child, YGFlexDirectionRow, ownerWidth);
+   const bool isColumnStyleDimDefined =
+@@ -1829,6 +1849,7 @@ static void YGZeroOutLayoutRecursively(
+     const YGNodeRef node,
+     void* layoutContext) {
+   node->getLayout() = {};
++  node->getLayout().zeroedByDisplayNone = true;
+   node->setLayoutDimension(0, 0);
+   node->setLayoutDimension(0, 1);
+   node->setHasNewLayout(true);

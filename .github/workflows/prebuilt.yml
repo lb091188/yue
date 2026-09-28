@@ -59,6 +59,12 @@ jobs:
       - name: Bootstrap
         run: node scripts/bootstrap.js --cc-wrapper=ccache
 
+      # MoonBit 绑定链路的自有补丁(third_party/yoga 是子模块,源码在
+      # 打包/构建前落盘)。补丁内路径相对子模块根。
+      - name: Apply yoga patches
+        shell: bash
+        run: git -C third_party/yoga apply --verbose "$GITHUB_WORKSPACE/patches/yoga-display-none-flex-basis.patch"
+
       - name: Create source distribution
         run: node scripts/create_source_dist.js --cc-wrapper=ccache
 
