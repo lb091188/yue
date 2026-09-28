@@ -66,7 +66,21 @@ jobs:
         run: git -C third_party/yoga apply --verbose "$GITHUB_WORKSPACE/patches/yoga-display-none-flex-basis.patch"
 
       - name: Create source distribution
-        run: node scripts/create_source_dist.js --cc-wrapper=ccache
+        shell: bash
+        run: |
+          set +e
+          node scripts/create_source_dist.js --cc-wrapper=ccache >/tmp/csd.out 2>&1
+          code=$?
+          set -e
+          if [ $code -ne 0 ]; then
+            tail -c 14400 /tmp/csd.out >/tmp/csd.tail
+            n=$(( ($(wc -c </tmp/csd.tail) + 1799) / 1800 ))
+            k=0; while [ $k -lt $n ]; do
+              echo "::error title=source-dist 尾段 $((k+1))/$n::$(dd if=/tmp/csd.tail bs=1800 skip=$k count=1 2>/dev/null | sed ':a;N;$!ba;s/\n/%0A/g')"
+              k=$((k+1))
+            done
+          fi
+          exit $code
 
       - name: Create prebuilt libraries
         run: node scripts/create_prebuilt_lib.js
