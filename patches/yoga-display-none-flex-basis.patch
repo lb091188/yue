@@ -33,12 +33,12 @@ index da34f240..093c0bfd 100644
 +  // recomputed from content again. For that first round after the wipe,
 +  // measure the content instead. Nodes with an explicit flexBasis style
 +  // keep the original behavior in full.
-+  const YGStyle& childStyle =
++  const YGStyle& redeclBasisStyle =
 +      static_cast<const YGNode*>(child)->getStyle();
 +  const bool basisFromFlexShorthand =
-+      !childStyle.flex().isUndefined() &&
-+      (childStyle.flexBasis().isUndefined() ||
-+       childStyle.flexBasis().isAuto());
++      !redeclBasisStyle.flex().isUndefined() &&
++      (redeclBasisStyle.flexBasis().isUndefined() ||
++       redeclBasisStyle.flexBasis().isAuto());
    const YGFloatOptional resolvedFlexBasis =
 -      YGResolveValue(child->resolveFlexBasisPtr(), mainAxisownerSize);
 +      (zeroedWhileNone && basisFromFlexShorthand &&
