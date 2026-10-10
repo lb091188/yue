@@ -73,12 +73,16 @@ jobs:
           code=$?
           set -e
           if [ $code -ne 0 ]; then
-            tail -c 14400 /tmp/csd.out >/tmp/csd.tail
-            n=$(( ($(wc -c </tmp/csd.tail) + 1799) / 1800 ))
-            k=0; while [ $k -lt $n ]; do
-              echo "::error title=source-dist 尾段 $((k+1))/$n::$(dd if=/tmp/csd.tail bs=1800 skip=$k count=1 2>/dev/null | sed ':a;N;$!ba;s/\n/%0A/g')"
+            # 按行上报尾段：每条注解恰好一整行。把多行塞进一条注解（用
+            # %0A 转义）在部分平台会被截断成读不出内容的片段，逐行最稳；
+            # 行内的 % 必须转义成 %25，否则注解解析会吃掉其后的内容。
+            tail -n 50 /tmp/csd.out >/tmp/csd.tail
+            n=$(wc -l </tmp/csd.tail)
+            k=0
+            while IFS= read -r line; do
               k=$((k+1))
-            done
+              echo "::error title=source-dist 尾行 $k/$n::$(printf '%s' "$line" | sed 's/%/%25/g')"
+            done < /tmp/csd.tail
           fi
           exit $code
 

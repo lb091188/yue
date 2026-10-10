@@ -67,25 +67,27 @@ static WKWebsiteDataStore* GetProfileDataStore(const std::string& profile) {
   WKWebsiteDataStore* store = [stores objectForKey:key];
   if (store)
     return store;
-  // A persistent store needs both the new API and an application identity: a
-  // bare executable has no bundle identifier to place the store under.
-  BOOL can_persist = NO;
-  if (@available(macOS 14.0, *))
-    can_persist = [[NSBundle mainBundle] bundleIdentifier] != nil;
-  if (can_persist) {
-    // The identifier names the on-disk session, so it is derived from the
-    // profile name to stay stable across runs.
-    std::string hex = base::MD5String(profile);
-    std::string uuid = hex.substr(0, 8) + "-" + hex.substr(8, 4) + "-" +
-                       hex.substr(12, 4) + "-" + hex.substr(16, 4) + "-" +
-                       hex.substr(20, 12);
-    NSUUID* identifier = [[[NSUUID alloc]
-        initWithUUIDString:base::SysUTF8ToNSString(uuid)] autorelease];
-    store = [[[WKWebsiteDataStore alloc] initWithIdentifier:identifier]
-        autorelease];
-  } else {
-    // Older systems, and executables without a bundle, can only isolate a
-    // session in memory: the profile keeps its own cookies and storage, but
+  // A persistent store needs both the API that names a session on disk and an
+  // application identity to place it under: the API arrived in macOS 14, and a
+  // bare executable has no bundle identifier. The availability check has to
+  // wrap the call itself, not just the identity check.
+  if (@available(macOS 14.0, *)) {
+    if ([[NSBundle mainBundle] bundleIdentifier] != nil) {
+      // The identifier names the on-disk session, so it is derived from the
+      // profile name to stay stable across runs.
+      std::string hex = base::MD5String(profile);
+      std::string uuid = hex.substr(0, 8) + "-" + hex.substr(8, 4) + "-" +
+                         hex.substr(12, 4) + "-" + hex.substr(16, 4) + "-" +
+                         hex.substr(20, 12);
+      NSUUID* identifier = [[[NSUUID alloc]
+          initWithUUIDString:base::SysUTF8ToNSString(uuid)] autorelease];
+      store = [[[WKWebsiteDataStore alloc] initWithIdentifier:identifier]
+          autorelease];
+    }
+  }
+  if (!store) {
+    // Without the API, or without a bundle identity, a session can only be
+    // isolated in memory: the profile keeps its own cookies and storage, but
     // they are lost when the process exits.
     store = [WKWebsiteDataStore nonPersistentDataStore];
   }

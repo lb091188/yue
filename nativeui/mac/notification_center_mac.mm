@@ -87,9 +87,16 @@
              (void (^)(UNNotificationPresentationOptions))completionHandler {
   shell_->on_notification_show.Emit(base::SysNSStringToUTF8(
       notification.request.content.userInfo[@"info"]));
-  completionHandler(UNNotificationPresentationOptionBanner |
-                    UNNotificationPresentationOptionList |
-                    UNNotificationPresentationOptionSound);
+  // The banner and list options arrived in macOS 11; the deployment target is
+  // lower, so the older option (deprecated afterwards) serves the rest.
+  if (@available(macOS 11.0, *)) {
+    completionHandler(UNNotificationPresentationOptionBanner |
+                      UNNotificationPresentationOptionList |
+                      UNNotificationPresentationOptionSound);
+  } else {
+    completionHandler(UNNotificationPresentationOptionAlert |
+                      UNNotificationPresentationOptionSound);
+  }
 }
 
 - (void)userNotificationCenter:(UNUserNotificationCenter*)center

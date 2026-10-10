@@ -114,7 +114,11 @@ BrowserImplWebview2::BrowserImplWebview2(Browser::Options options,
           State::GetCurrent()->GetWebView2Loader()->GetFunctionPointer(
               "CreateCoreWebView2EnvironmentWithOptions"));
   if (!create ||
-      FAILED(create(nullptr, GetUserDataDir(options().profile).value().c_str(),
+      // The options are read back from the base class rather than from the
+      // constructor's options parameter, which is a plain value that has
+      // already been moved out, and whose name hides options().
+      FAILED(create(nullptr,
+                    GetUserDataDir(this->options().profile).value().c_str(),
                     GetWebView2Options().Get(), callback.Get()))) {
     CreationFailed();
     return;
@@ -340,10 +344,10 @@ void BrowserImplWebview2::UpdateScripts() {
     if (user_script.timing == Browser::UserScriptInjectionTime::kDocumentEnd) {
       // WebView2 only injects before the document is created, so the
       // "document end" timing is emulated by waiting for the document to be
-      // parsed.
-      code = base::StringPrintf(
-          L"document.addEventListener('DOMContentLoaded',function(){%ls});",
-          code.c_str());
+      // parsed. The wrapper is built by concatenation: base::StringPrintf is
+      // narrow only.
+      code = L"document.addEventListener('DOMContentLoaded',function(){" +
+             code + L"});";
     }
     scripts.push_back(std::move(code));
   }
