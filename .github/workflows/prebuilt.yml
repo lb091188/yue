@@ -88,7 +88,10 @@ jobs:
             # 转义成 %25,否则注解解析会吃掉其后的内容。
             esc() { printf '%s' "$1" | sed 's/%/%25/g'; }
             echo "::error title=source-dist 环境::尝试 $attempt 次;$(df -h . 2>/dev/null | tail -1 | tr -s ' ');$(vm_stat 2>/dev/null | sed -n '2,3p' | tr -s ' ' | tr '\n' ' ')"
-            grep -aE 'error|Error|FAILED|ninja: |undefined|ld: |fatal|Asserti' /tmp/csd.out >/tmp/csd.sel || true
+            # 只要真正的诊断行:排除超长的编译命令行(它以 -Werror 匹配到关键字但无信息),
+            # 去重后取前 9 条;一条都没有时再补输出末尾的行。
+            grep -aE 'error:|Error:|error C[0-9]{4}|FAILED:|undefined reference|undefined symbol|ld: |fatal' /tmp/csd.out \
+              | awk 'length($0) < 500 && !seen[$0]++' | head -n 9 >/tmp/csd.sel
             sel=$(wc -l </tmp/csd.sel | tr -d ' ')
             if [ "$sel" -lt 9 ]; then
               tail -n $((9 - sel)) /tmp/csd.out >>/tmp/csd.sel

@@ -74,15 +74,16 @@ static WKWebsiteDataStore* GetProfileDataStore(const std::string& profile) {
   if (@available(macOS 14.0, *)) {
     if ([[NSBundle mainBundle] bundleIdentifier] != nil) {
       // The identifier names the on-disk session, so it is derived from the
-      // profile name to stay stable across runs.
+      // profile name to stay stable across runs. Asking twice for the same
+      // identifier yields two objects over one store, so the result is cached
+      // above and the same object is handed out again.
       std::string hex = base::MD5String(profile);
       std::string uuid = hex.substr(0, 8) + "-" + hex.substr(8, 4) + "-" +
                          hex.substr(12, 4) + "-" + hex.substr(16, 4) + "-" +
                          hex.substr(20, 12);
       NSUUID* identifier = [[[NSUUID alloc]
           initWithUUIDString:base::SysUTF8ToNSString(uuid)] autorelease];
-      store = [[[WKWebsiteDataStore alloc] initWithIdentifier:identifier]
-          autorelease];
+      store = [WKWebsiteDataStore dataStoreForIdentifier:identifier];
     }
   }
   if (!store) {

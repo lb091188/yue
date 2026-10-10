@@ -43,11 +43,11 @@ void Notification::Show() {
   NSString* identifier = base::SysUTF8ToNSString(mac_content_.identifier);
   base::apple::scoped_nsobject<UNMutableNotificationContent> content(
       [[UNMutableNotificationContent alloc] init]);
-  [content setTitle:base::SysUTF8ToNSString(mac_content_.title)];
-  [content setBody:base::SysUTF8ToNSString(mac_content_.body)];
+  [content.get() setTitle:base::SysUTF8ToNSString(mac_content_.title)];
+  [content.get() setBody:base::SysUTF8ToNSString(mac_content_.body)];
   if (!mac_content_.silent)
-    [content setSound:[UNNotificationSound defaultSound]];
-  [content setUserInfo:@{
+    [content.get() setSound:[UNNotificationSound defaultSound]];
+  [content.get() setUserInfo:@{
     @"info": base::SysUTF8ToNSString(mac_content_.info),
     @"actionInfo": @"",
   }];
@@ -61,7 +61,7 @@ void Notification::Show() {
                          options:nil
                            error:&error];
     if (attachment)
-      [content setAttachments:@[ attachment ]];
+      [content.get() setAttachments:@[ attachment ]];
     else
       LOG(ERROR) << "Failed to attach notification image: "
                  << mac_content_.image_path;
@@ -92,7 +92,7 @@ void Notification::Show() {
                      options:UNNotificationActionOptionNone];
     [actions addObject:nsaction];
   }
-  [content setCategoryIdentifier:identifier];
+  [content.get() setCategoryIdentifier:identifier];
   UNUserNotificationCenter* center =
       [UNUserNotificationCenter currentNotificationCenter];
   [center
