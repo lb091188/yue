@@ -4,6 +4,9 @@
 
 #include "nativeui/scroll.h"
 
+#include <algorithm>
+
+#include "nativeui/container.h"
 #include "nativeui/mac/nu_private.h"
 #include "nativeui/mac/nu_view.h"
 
@@ -12,11 +15,13 @@
   nu::NUViewPrivate private_;
   nu::Scroll* shell_;
   BOOL subscribed_;
+  BOOL content_size_explicit_;
   NSSize content_size_;
 }
 - (id)initWithShell:(nu::Scroll*)shell;
 - (void)setEventEnabled:(BOOL)enable;
 - (void)setContentSize:(NSSize)size;
+- (void)refreshContentSizeWith:(nu::View*)content;
 @end
 
 @implementation NUScroll
@@ -25,6 +30,8 @@
   if ((self = [super init])) {
     shell_ = shell;
     subscribed_ = NO;
+    content_size_explicit_ = NO;
+    content_size_ = NSZeroSize;
   }
   return self;
 }
@@ -54,6 +61,7 @@
 
 - (void)setContentSize:(NSSize)size {
   content_size_ = size;
+  content_size_explicit_ = YES;
 }
 
 - (void)onScroll:(NSNotification*)notification {
@@ -81,16 +89,41 @@
 }
 
 - (void)resizeSubviewsWithOldSize:(NSSize)oldBoundsSize {
-  // Automatically resize the content view when ScrollView is larger than the
-  // content size.
+  [self refreshContentSizeWith:shell_ ? shell_->GetContentView() : nullptr];
+  [super resizeSubviewsWithOldSize:oldBoundsSize];
+}
+
+// Size the document view from the explicitly set content size when there is
+// one, and from the content's natural size otherwise, then never let it be
+// smaller than the viewport.
+- (void)refreshContentSizeWith:(nu::View*)content {
+  NSView* documentView = self.documentView;
+  if (!documentView)
+    return;
   NSSize parent_size = [self frame].size;
   NSSize content_size = content_size_;
+  if (!content_size_explicit_)
+    content_size = [self naturalContentSizeOf:content inViewport:parent_size];
   if (content_size.width < parent_size.width)
     content_size.width = parent_size.width;
   if (content_size.height < parent_size.height)
     content_size.height = parent_size.height;
-  [self.documentView setFrameSize:content_size];
-  [super resizeSubviewsWithOldSize:oldBoundsSize];
+  [documentView setFrameSize:content_size];
+}
+
+// Measure the content's natural size. The measurement is done at the viewport
+// width, so that text wraps exactly like it will in the final layout, while a
+// content that is wider than the viewport (e.g. an oversized table) still
+// contributes its own width and scrolls horizontally.
+- (NSSize)naturalContentSizeOf:(nu::View*)content
+                    inViewport:(NSSize)parent_size {
+  if (!content || !content->IsContainer())
+    return content_size_;
+  auto* container = static_cast<nu::Container*>(content);
+  CGFloat width = std::max<CGFloat>(
+      parent_size.width, container->GetPreferredSize().width());
+  return NSMakeSize(width,
+                    container->GetPreferredHeightForWidth(static_cast<float>(width)));
 }
 
 @end
@@ -109,8 +142,11 @@ void Scroll::PlatformInit() {
 }
 
 void Scroll::PlatformSetContentView(View* view) {
-  auto* scroll = static_cast<NSScrollView*>(GetNative());
+  auto* scroll = static_cast<NUScroll*>(GetNative());
   scroll.documentView = view->GetNative();
+  // The content decides the scrollable range when no explicit content size was
+  // set, and it can be set after the scroll has already been laid out.
+  [scroll refreshContentSizeWith:view];
 }
 
 void Scroll::SetContentSize(const SizeF& size) {
@@ -183,6 +219,11 @@ std::tuple<Scroll::Elasticity, Scroll::Elasticity> Scroll::GetScrollElasticity()
   Elasticity h = static_cast<Elasticity>(scroll.horizontalScrollElasticity);
   Elasticity v = static_cast<Elasticity>(scroll.verticalScrollElasticity);
   return std::make_tuple(h, v);
+}
+
+void Scroll::RefreshContentSize() {
+  auto* scroll = static_cast<NUScroll*>(GetNative());
+  [scroll refreshContentSizeWith:GetContentView()];
 }
 
 void Scroll::SubscribeOnScroll() {

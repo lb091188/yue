@@ -55,6 +55,14 @@ class NATIVEUI_EXPORT Scroll : public View {
   };
   void SetScrollElasticity(Elasticity h, Elasticity v);
   std::tuple<Elasticity, Elasticity> GetScrollElasticity() const;
+
+  // Re-measure the content and resize the document view accordingly. Only
+  // meaningful when no explicit content size was set: the document view frame
+  // is what decides the scrollable range on macOS, and it follows the
+  // content's natural size. The equivalent platforms re-read the natural size
+  // in their own layout passes (Windows in ScrollImpl::Layout, Linux from the
+  // content's size request), so they need no counterpart.
+  void RefreshContentSize();
 #endif
 
   // View:
