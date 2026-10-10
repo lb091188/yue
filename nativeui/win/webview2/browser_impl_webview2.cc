@@ -39,12 +39,17 @@ ProtocolHandlerMap& GetProtocolHandlers() {
   return *handlers;
 }
 
-// C:\Users\USER_NAME\AppData\Local\APPLICATION_NAME
-base::FilePath GetUserDataDir() {
+// C:\Users\USER_NAME\AppData\Local\APPLICATION_NAME[\profiles\PROFILE]
+// The user data folder carries the session: webviews sharing a folder share
+// their cookies and storage, different folders stay isolated.
+base::FilePath GetUserDataDir(const std::string& profile) {
   base::FilePath path;
   if (!base::PathService::Get(base::DIR_LOCAL_APP_DATA, &path))
     base::PathService::Get(base::DIR_TEMP, &path);
-  return path.Append(base::UTF8ToWide(App::GetCurrent()->GetName()));
+  path = path.Append(base::UTF8ToWide(App::GetCurrent()->GetName()));
+  if (!profile.empty())
+    path = path.Append(L"profiles").Append(base::UTF8ToWide(profile));
+  return path;
 }
 
 // Return the options used for creating WebView2.
@@ -109,7 +114,7 @@ BrowserImplWebview2::BrowserImplWebview2(Browser::Options options,
           State::GetCurrent()->GetWebView2Loader()->GetFunctionPointer(
               "CreateCoreWebView2EnvironmentWithOptions"));
   if (!create ||
-      FAILED(create(nullptr, GetUserDataDir().value().c_str(),
+      FAILED(create(nullptr, GetUserDataDir(options().profile).value().c_str(),
                     GetWebView2Options().Get(), callback.Get()))) {
     CreationFailed();
     return;

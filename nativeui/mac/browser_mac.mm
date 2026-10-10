@@ -9,6 +9,7 @@
 #include <WebKit/WebKit.h>
 
 #include "base/apple/scoped_nsobject.h"
+#include "base/hash/md5.h"
 #include "base/strings/sys_string_conversions.h"
 #include "nativeui/mac/browser/nu_custom_protocol.h"
 #include "nativeui/mac/browser/nu_web_ui_delegate.h"
@@ -55,6 +56,43 @@
 - (void)updateScripts;
 @end
 
+// Returns the data store of a session profile: browsers created with the same
+// profile share one store, and hence one session, while the browsers without a
+// profile keep using the default store (the behavior before profiles existed).
+static WKWebsiteDataStore* GetProfileDataStore(const std::string& profile) {
+  static NSMutableDictionary* stores = nil;
+  if (!stores)
+    stores = [[NSMutableDictionary alloc] init];
+  NSString* key = base::SysUTF8ToNSString(profile);
+  WKWebsiteDataStore* store = [stores objectForKey:key];
+  if (store)
+    return store;
+  // A persistent store needs both the new API and an application identity: a
+  // bare executable has no bundle identifier to place the store under.
+  BOOL can_persist = NO;
+  if (@available(macOS 14.0, *))
+    can_persist = [[NSBundle mainBundle] bundleIdentifier] != nil;
+  if (can_persist) {
+    // The identifier names the on-disk session, so it is derived from the
+    // profile name to stay stable across runs.
+    std::string hex = base::MD5String(profile);
+    std::string uuid = hex.substr(0, 8) + "-" + hex.substr(8, 4) + "-" +
+                       hex.substr(12, 4) + "-" + hex.substr(16, 4) + "-" +
+                       hex.substr(20, 12);
+    NSUUID* identifier = [[[NSUUID alloc]
+        initWithUUIDString:base::SysUTF8ToNSString(uuid)] autorelease];
+    store = [[[WKWebsiteDataStore alloc] initWithIdentifier:identifier]
+        autorelease];
+  } else {
+    // Older systems, and executables without a bundle, can only isolate a
+    // session in memory: the profile keeps its own cookies and storage, but
+    // they are lost when the process exits.
+    store = [WKWebsiteDataStore nonPersistentDataStore];
+  }
+  [stores setObject:store forKey:key];
+  return store;
+}
+
 @implementation NUWebView
 
 - (id)initWithShell:(nu::Browser*)shell
@@ -69,6 +107,10 @@
     [[config.get() preferences] setValue:@YES forKey:@"developerExtrasEnabled"];
   if (options.allow_file_access_from_files)
     [[config.get() preferences] setValue:@YES forKey:@"allowFileAccessFromFileURLs"];
+  // Give the profile its own session, the default store serves the browsers
+  // without a profile.
+  if (!options.profile.empty())
+    [config.get() setWebsiteDataStore:GetProfileDataStore(options.profile)];
   [[config.get() userContentController] addScriptMessageHandler:handler_.get()
                                                            name:@"yue"];
   [super initWithFrame:NSZeroRect configuration:config.get()];

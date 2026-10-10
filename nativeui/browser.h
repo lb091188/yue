@@ -53,6 +53,18 @@ class NATIVEUI_EXPORT Browser : public View {
     // Used for testing the creation failure of WebView2.
     bool webview2_force_ie = false;
 #endif
+    // Session profile: browsers created with the same non-empty profile share
+    // one session (cookies, local storage, cache) and stay isolated from the
+    // other profiles, so the same site can be signed in with different
+    // accounts. Empty means the process-wide default session, which is the
+    // behavior without profiles.
+    //
+    // The session of a profile is stored under the application's data
+    // directory and survives restarts, except on macOS before 14 and for
+    // executables without a bundle identifier, where only an in-memory
+    // session can be isolated. The IE backend on Windows has no notion of
+    // profiles and always uses the default session.
+    std::string profile;
   };
 
   // When a user script runs, relative to the document being loaded.

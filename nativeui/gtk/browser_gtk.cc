@@ -9,7 +9,9 @@
 
 #include "base/json/json_reader.h"
 #include "base/no_destructor.h"
+#include "nativeui/app.h"
 #include "nativeui/gtk/nu_protocol_stream.h"
+#include "nativeui/state.h"
 #include "nativeui/gtk/util/widget_util.h"
 
 namespace nu {
@@ -211,6 +213,75 @@ void OnProtocolRequest(WebKitURISchemeRequest* request,
   }
 }
 
+// Session profiles: browsers created with the same profile share one web
+// context, and hence one session (cookies, local storage, cache), while
+// browsers without a profile keep using the process-wide default context.
+using ProfileContextMap = std::map<std::string, WebKitWebContext*>;
+ProfileContextMap& GetProfileContexts() {
+  static base::NoDestructor<ProfileContextMap> contexts;
+  return *contexts;
+}
+
+// Registers a known protocol handler on a context. The handler map owns the
+// handlers, so no deleter is given to WebKit.
+void RegisterProtocolOnContext(WebKitWebContext* context,
+                              const std::string& scheme) {
+  auto it = GetProtocolHandlers().find(scheme);
+  if (it == GetProtocolHandlers().end())
+    return;
+  webkit_web_context_register_uri_scheme(
+      context,
+      scheme.c_str(),
+      reinterpret_cast<WebKitURISchemeRequestCallback>(&OnProtocolRequest),
+      &it->second,
+      nullptr);
+}
+
+// <user data dir>/yue-profiles/<app>/<profile>: the application name keeps the
+// profiles of unrelated programs apart.
+std::string ProfileBaseDir(const std::string& profile) {
+  std::string app;
+  // The state is created before any view, the program name is only a fallback
+  // for profiles asked for very early.
+  if (State::GetCurrent())
+    app = App::GetCurrent()->GetID();
+  if (app.empty()) {
+    const char* name = g_get_prgname();
+    app = (name && *name) ? name : "yue";
+  }
+  gchar* dir = g_build_filename(g_get_user_data_dir(), "yue-profiles",
+                                app.c_str(), profile.c_str(), nullptr);
+  std::string result(dir);
+  g_free(dir);
+  return result;
+}
+
+WebKitWebContext* GetOrCreateProfileContext(const std::string& profile) {
+  auto it = GetProfileContexts().find(profile);
+  if (it != GetProfileContexts().end())
+    return it->second;
+  // The data and cache directories carry the isolation: WebKit stores the
+  // cookies, local storage and cache of a context under them.
+  std::string base_dir = ProfileBaseDir(profile);
+  std::string data_dir = base_dir + "/data";
+  std::string cache_dir = base_dir + "/cache";
+  g_mkdir_with_parents(data_dir.c_str(), 0700);
+  g_mkdir_with_parents(cache_dir.c_str(), 0700);
+  WebKitWebsiteDataManager* manager = webkit_website_data_manager_new(
+      "base-data-directory", data_dir.c_str(),
+      "base-cache-directory", cache_dir.c_str(),
+      nullptr);
+  WebKitWebContext* context =
+      webkit_web_context_new_with_website_data_manager(manager);
+  g_object_unref(manager);
+  // Protocols are registered per context, so a new context catches up with the
+  // schemes registered so far.
+  for (const auto& handler : GetProtocolHandlers())
+    RegisterProtocolOnContext(context, handler.first);
+  GetProfileContexts()[profile] = context;
+  return context;
+}
+
 }  // namespace
 
 void Browser::PlatformInit(Options options) {
@@ -220,8 +291,18 @@ void Browser::PlatformInit(Options options) {
                    G_CALLBACK(OnScriptMessage), this);
   webkit_user_content_manager_register_script_message_handler(manager, "yue");
 
-  // Create webview.
-  GtkWidget* webview = webkit_web_view_new_with_user_content_manager(manager);
+  // Create webview: a browser with a profile gets its own context, and hence
+  // its own session, while the others keep sharing the default context.
+  GtkWidget* webview = nullptr;
+  if (options.profile.empty()) {
+    webview = webkit_web_view_new_with_user_content_manager(manager);
+  } else {
+    webview = GTK_WIDGET(
+        g_object_new(WEBKIT_TYPE_WEB_VIEW,
+                     "web-context", GetOrCreateProfileContext(options.profile),
+                     "user-content-manager", manager,
+                     nullptr));
+  }
   TakeOverView(webview);
 
   // Assign a new settings to avoid affecting other webviews.
@@ -389,17 +470,12 @@ void Browser::PlatformUpdateScripts() {
 // static
 bool Browser::RegisterProtocol(const std::string& scheme,
                                ProtocolHandler handler) {
-  ProtocolHandler& ref = GetProtocolHandlers()[scheme] = std::move(handler);
-  WebKitWebContext* context = webkit_web_context_get_default();
-  webkit_web_context_register_uri_scheme(
-      context,
-      scheme.c_str(),
-      reinterpret_cast<WebKitURISchemeRequestCallback>(&OnProtocolRequest),
-      &ref,
-      // The deleter is set to null as the pointer is managed by us. Please do
-      // not try to manage the handler with a deleter, which would make GTK
-      // delete the handler on exit and result in crashes in js bindings.
-      nullptr);
+  GetProtocolHandlers()[scheme] = std::move(handler);
+  // Protocols are registered per context, so the scheme goes to the default
+  // context and to every profile created so far.
+  RegisterProtocolOnContext(webkit_web_context_get_default(), scheme);
+  for (const auto& context : GetProfileContexts())
+    RegisterProtocolOnContext(context.second, scheme);
   return true;
 }
 
@@ -407,9 +483,13 @@ bool Browser::RegisterProtocol(const std::string& scheme,
 void Browser::UnregisterProtocol(const std::string& scheme) {
   GetProtocolHandlers().erase(scheme);
   // There is no unregister API, just replace with a handler to return error.
-  WebKitWebContext* context = webkit_web_context_get_default();
-  webkit_web_context_register_uri_scheme(
-      context, scheme.c_str(), &OnNullProtocolRequest, nullptr, nullptr);
+  auto unregister_on = [&scheme](WebKitWebContext* context) {
+    webkit_web_context_register_uri_scheme(
+        context, scheme.c_str(), &OnNullProtocolRequest, nullptr, nullptr);
+  };
+  unregister_on(webkit_web_context_get_default());
+  for (const auto& context : GetProfileContexts())
+    unregister_on(context.second);
 }
 
 }  // namespace nu
