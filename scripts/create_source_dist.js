@@ -39,8 +39,19 @@ function GenerateProject() {
   process.env.JUMBO_INCLUDE_FILE_CONTENTS = 'true'
   if (spawnSync('gn', ['gen', 'out/Source', `--args=${args.join(' ')}`]).status != 0)
     process.exit(1)
-  if (spawnSync('ninja', ['-C', 'out/Source', 'nativeui']).status != 0)
+  // Report the status and signal explicitly: when ninja is killed the log just
+  // stops at a progress line, and the reason is otherwise invisible.
+  let ninja
+  try {
+    ninja = spawnSync('ninja', ['-C', 'out/Source', 'nativeui'])
+  } catch (e) {
+    console.error(`ninja aborted: ${e.message}`)
+    process.exit(3)
+  }
+  if (ninja.status != 0) {
+    console.error(`ninja exited with ${ninja.status}`)
     process.exit(2)
+  }
 }
 
 async function GetAllDeps(target) {

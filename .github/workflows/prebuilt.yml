@@ -68,21 +68,34 @@ jobs:
       - name: Create source distribution
         shell: bash
         run: |
+          # macos-15(arm64) runner 实测出现过中途静默终结:日志止于 ninja 进度行、
+          # 无任何编译诊断(Windows 同类失败带有完整 FAILED 块),故整步最多重试
+          # 一次,两次都失败才判定为真失败。
           set +e
-          node scripts/create_source_dist.js --cc-wrapper=ccache >/tmp/csd.out 2>&1
-          code=$?
+          code=1
+          attempt=0
+          for attempt in 1 2; do
+            node scripts/create_source_dist.js --cc-wrapper=ccache >/tmp/csd.out 2>&1
+            code=$?
+            if [ $code -eq 0 ]; then break; fi
+            echo "第 $attempt 次尝试失败(退出码 $code),日志留档 /tmp/csd.attempt$attempt.out"
+            cp /tmp/csd.out /tmp/csd.attempt$attempt.out
+          done
           set -e
           if [ $code -ne 0 ]; then
-            # 按行上报尾段：每条注解恰好一整行。把多行塞进一条注解（用
-            # %0A 转义）在部分平台会被截断成读不出内容的片段，逐行最稳；
-            # 行内的 % 必须转义成 %25，否则注解解析会吃掉其后的内容。
-            tail -n 50 /tmp/csd.out >/tmp/csd.tail
-            n=$(wc -l </tmp/csd.tail)
-            k=0
+            # GitHub 每步只保留 10 条注解,所以上报 1 条环境快照 + 最多 9 条日志里
+            # 最有信息量的行(先挑错误/失败相关行,不足再补输出末尾)。行内 %
+            # 转义成 %25,否则注解解析会吃掉其后的内容。
+            esc() { printf '%s' "$1" | sed 's/%/%25/g'; }
+            echo "::error title=source-dist 环境::尝试 $attempt 次;$(df -h . 2>/dev/null | tail -1 | tr -s ' ');$(vm_stat 2>/dev/null | sed -n '2,3p' | tr -s ' ' | tr '\n' ' ')"
+            grep -aE 'error|Error|FAILED|ninja: |undefined|ld: |fatal|Asserti' /tmp/csd.out >/tmp/csd.sel || true
+            sel=$(wc -l </tmp/csd.sel | tr -d ' ')
+            if [ "$sel" -lt 9 ]; then
+              tail -n $((9 - sel)) /tmp/csd.out >>/tmp/csd.sel
+            fi
             while IFS= read -r line; do
-              k=$((k+1))
-              echo "::error title=source-dist 尾行 $k/$n::$(printf '%s' "$line" | sed 's/%/%25/g')"
-            done < /tmp/csd.tail
+              echo "::error title=source-dist 关键行::$(esc "$line")"
+            done < /tmp/csd.sel
           fi
           exit $code
 
