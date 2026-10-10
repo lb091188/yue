@@ -10,7 +10,9 @@
 #include <webview2.h>
 #include <wrl.h>
 
+#include <functional>
 #include <string>
+#include <vector>
 
 #include "base/memory/weak_ptr.h"
 #include "nativeui/win/browser_win.h"
@@ -48,7 +50,7 @@ class BrowserImplWebview2 : public BrowserImpl {
   void Stop() override;
   bool IsLoading() const override;
 
-  void UpdateBindings() override;
+  void UpdateScripts() override;
   void SetBounds(RECT rect) override;
   void Focus() override;
   bool HasFocus() const override;
@@ -81,13 +83,15 @@ class BrowserImplWebview2 : public BrowserImpl {
 
   // Whether this webview has loaded anything.
   bool is_first_load_ = true;
-  // Whether current binding script is still being added.
+  // Whether the injected scripts are still being added.
   bool is_script_adding_ = false;
-  // Whether the binding script should be updated.
+  // Whether the injected scripts should be updated.
   bool pending_script_update_ = false;
-  // The ID of current binding script.
-  std::wstring script_id_;
-  // The pending operations when the binding script is being added.
+  // The IDs of the injected scripts, in the order they were added.
+  std::vector<std::wstring> script_ids_;
+  // How many scripts are still waiting for their ID.
+  int scripts_adding_ = 0;
+  // The pending operations when the injected scripts are being added.
   std::function<void()> pending_load_;
 
   bool has_focus_ = false;

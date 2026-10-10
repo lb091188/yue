@@ -45,7 +45,7 @@ const char* Browser::GetClassName() const {
 void Browser::SetBindingName(const std::string& name) {
   base::EscapeJSONString(name, false, &binding_name_);
   if (!is_adding_bindings_ && !stop_serving_)
-    PlatformUpdateBindings();
+    PlatformUpdateScripts();
 }
 
 void Browser::AddRawBinding(const std::string& name, BindingFunc func) {
@@ -55,7 +55,7 @@ void Browser::AddRawBinding(const std::string& name, BindingFunc func) {
   base::EscapeJSONString(name, false, &escaped);
   bindings_[escaped] = std::move(func);
   if (!is_adding_bindings_ && !stop_serving_)
-    PlatformUpdateBindings();
+    PlatformUpdateScripts();
 }
 
 void Browser::RemoveBinding(const std::string& name) {
@@ -65,7 +65,7 @@ void Browser::RemoveBinding(const std::string& name) {
   base::EscapeJSONString(name, false, &escaped);
   bindings_.erase(escaped);
   if (!is_adding_bindings_ && !stop_serving_)
-    PlatformUpdateBindings();
+    PlatformUpdateScripts();
 }
 
 bool Browser::HasBindings() const {
@@ -80,7 +80,25 @@ void Browser::EndAddingBindings() {
   if (!is_adding_bindings_)
     return;
   is_adding_bindings_ = false;
-  PlatformUpdateBindings();
+  PlatformUpdateScripts();
+}
+
+void Browser::AddUserScript(const std::string& code,
+                            UserScriptInjectionTime timing,
+                            bool main_frame_only) {
+  if (code.empty())
+    return;
+  user_scripts_.push_back({code, timing, main_frame_only});
+  if (!stop_serving_)
+    PlatformUpdateScripts();
+}
+
+void Browser::RemoveAllUserScripts() {
+  if (user_scripts_.empty())
+    return;
+  user_scripts_.clear();
+  if (!stop_serving_)
+    PlatformUpdateScripts();
 }
 
 bool Browser::InvokeBindings(const std::string& json_str) {

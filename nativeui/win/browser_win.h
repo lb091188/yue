@@ -83,7 +83,7 @@ class BrowserImpl {
   virtual void Stop() = 0;
   virtual bool IsLoading() const = 0;
 
-  virtual void UpdateBindings() {}
+  virtual void UpdateScripts() {}
   virtual void SetBounds(RECT rect) = 0;
   virtual void Focus() = 0;
   virtual bool HasFocus() const = 0;

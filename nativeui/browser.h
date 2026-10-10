@@ -55,6 +55,22 @@ class NATIVEUI_EXPORT Browser : public View {
 #endif
   };
 
+  // When a user script runs, relative to the document being loaded.
+  enum class UserScriptInjectionTime {
+    // Before the document is parsed, so the page's own scripts already see the
+    // script's effects.
+    kDocumentStart,
+    // After the document has been parsed, before its resources finish loading.
+    kDocumentEnd,
+  };
+
+  // A script injected into every document the browser loads.
+  struct NATIVEUI_EXPORT UserScript {
+    std::string code;
+    UserScriptInjectionTime timing = UserScriptInjectionTime::kDocumentStart;
+    bool main_frame_only = true;
+  };
+
   explicit Browser(Options options);
 
   // View class name.
@@ -101,6 +117,17 @@ class NATIVEUI_EXPORT Browser : public View {
   void BeginAddingBindings();
   void EndAddingBindings();
 
+  // Adds a script that is injected into every document from now on, so unlike
+  // ExecuteJavaScript it keeps working across navigations. The binding script
+  // (see SetBindingName/AddRawBinding) is always injected before the user
+  // scripts, so the user scripts can rely on the bindings being there.
+  void AddUserScript(const std::string& code,
+                     UserScriptInjectionTime timing =
+                         UserScriptInjectionTime::kDocumentStart,
+                     bool main_frame_only = true);
+  // Removes all user scripts, including the ones added before.
+  void RemoveAllUserScripts();
+
   // Automatically deduce argument types.
   template<typename Sig>
   void AddBinding(const std::string& name, std::function<Sig> func) {
@@ -122,6 +149,10 @@ class NATIVEUI_EXPORT Browser : public View {
 
   // Internal: Generate the user script to inject bindings.
   std::string GetBindingScript();
+
+  // Internal: Access to the injected user scripts.
+  const std::vector<UserScript>& user_scripts() const { return user_scripts_; }
+  bool HasUserScripts() const { return !user_scripts_.empty(); }
 
   // Internal: Access to bindings properties.
   bool stop_serving() const { return stop_serving_; }
@@ -156,7 +187,10 @@ class NATIVEUI_EXPORT Browser : public View {
  private:
   void PlatformInit(Options options);
   void PlatformDestroy();
-  void PlatformUpdateBindings();
+  // Rebuilds the scripts injected into every document: the binding script and
+  // the user scripts. Platforms inject them in one place, so one hook covers
+  // both and the user scripts survive binding updates.
+  void PlatformUpdateScripts();
 
   // Prevent malicous calls to native bindings.
   std::string security_key_;
@@ -170,6 +204,7 @@ class NATIVEUI_EXPORT Browser : public View {
   std::string binding_name_;
   std::map<std::string, BindingFunc> bindings_;
   bool is_adding_bindings_ = false;
+  std::vector<UserScript> user_scripts_;
 };
 
 }  // namespace nu

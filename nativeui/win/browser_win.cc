@@ -284,9 +284,9 @@ bool Browser::IsLoading() const {
   return browser->IsLoading();
 }
 
-void Browser::PlatformUpdateBindings() {
+void Browser::PlatformUpdateScripts() {
   auto* browser = static_cast<BrowserHolder*>(GetNative())->impl();
-  browser->UpdateBindings();
+  browser->UpdateScripts();
 }
 
 // static

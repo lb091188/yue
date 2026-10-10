@@ -52,7 +52,7 @@
 - (id)initWithShell:(nu::Browser*)shell
             options:(nu::Browser::Options)options;
 - (void)willDestroy;
-- (void)updateBindings;
+- (void)updateScripts;
 @end
 
 @implementation NUWebView
@@ -101,10 +101,27 @@
   [self removeObserver:self forKeyPath:@"canGoForward"];
 }
 
-- (void)updateBindings {
+- (void)updateScripts {
   auto* controller = [[self configuration] userContentController];
+  // WKUserContentController cannot update a single script, so the list is
+  // rebuilt as a whole — which is also what keeps the user scripts alive
+  // across binding updates.
   [controller removeAllUserScripts];
+  // The binding script goes first so that the user scripts can use the
+  // bindings, and user scripts are injected in the order they were added.
   [controller addUserScript:[self generateUserScript]];
+  for (const nu::Browser::UserScript& user_script : shell_->user_scripts()) {
+    WKUserScriptInjectionTime injection_time =
+        user_script.timing ==
+                nu::Browser::UserScriptInjectionTime::kDocumentStart
+            ? WKUserScriptInjectionTimeAtDocumentStart
+            : WKUserScriptInjectionTimeAtDocumentEnd;
+    WKUserScript* script = [[[WKUserScript alloc]
+        initWithSource:base::SysUTF8ToNSString(user_script.code)
+         injectionTime:injection_time
+      forMainFrameOnly:user_script.main_frame_only ? YES : NO] autorelease];
+    [controller addUserScript:script];
+  }
 }
 
 - (WKUserScript*)generateUserScript {
@@ -370,9 +387,9 @@ bool Browser::IsLoading() const {
   return [static_cast<NUWebView*>(GetNative()) isLoading];
 }
 
-void Browser::PlatformUpdateBindings() {
+void Browser::PlatformUpdateScripts() {
   auto* webview = static_cast<NUWebView*>(GetNative());
-  [webview updateBindings];
+  [webview updateScripts];
 }
 
 void Browser::PlatformInstallMouseClickEvents() {

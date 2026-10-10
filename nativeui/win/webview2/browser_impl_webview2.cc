@@ -145,8 +145,8 @@ void BrowserImplWebview2::LoadURL(std::wstring str) {
   bool should_update_bindings = delegate()->HasBindings() && is_first_load_;
   is_first_load_ = false;
   if (should_update_bindings) {
-    // The binding script is not added until the first load.
-    UpdateBindings();
+    // The injected scripts are not added until the first load.
+    UpdateScripts();
     // Do the load after the binding script is added.
     base::WeakPtr<BrowserImplWebview2> ref = weak_factory_.GetWeakPtr();
     pending_load_ = [ref, str]() {
@@ -166,8 +166,8 @@ void BrowserImplWebview2::LoadHTML(std::wstring str,
   bool should_update_bindings = delegate()->HasBindings() && is_first_load_;
   is_first_load_ = false;
   if (should_update_bindings) {
-    // The binding script is not added until the first load.
-    UpdateBindings();
+    // The injected scripts are not added until the first load.
+    UpdateScripts();
     // Do the load after the binding script is added.
     base::WeakPtr<BrowserImplWebview2> ref = weak_factory_.GetWeakPtr();
     pending_load_ = [ref, str, base_url]() {
@@ -309,43 +309,74 @@ bool BrowserImplWebview2::IsLoading() const {
   return is_loading_;
 }
 
-void BrowserImplWebview2::UpdateBindings() {
-  if (is_first_load_ || !delegate()->HasBindings() || !webview_)
+void BrowserImplWebview2::UpdateScripts() {
+  if (is_first_load_ || !webview_ ||
+      (!delegate()->HasBindings() && !delegate()->HasUserScripts())) {
     return;
+  }
   // Schedule another update if there is already one.
   if (is_script_adding_) {
     pending_script_update_ = true;
     return;
   }
-  // Clear current script.
-  if (!script_id_.empty())
-    webview_->RemoveScriptToExecuteOnDocumentCreated(script_id_.c_str());
-  // Add script asyncronously.
+  // Clear the scripts added by the previous update: WebView2 keeps every
+  // injected script until it is removed by the id it returned.
+  for (const std::wstring& id : script_ids_)
+    webview_->RemoveScriptToExecuteOnDocumentCreated(id.c_str());
+  script_ids_.clear();
+
+  // The binding script goes first so that the user scripts can use the
+  // bindings, and user scripts are injected in the order they were added.
+  std::vector<std::wstring> scripts;
+  if (delegate()->HasBindings())
+    scripts.push_back(base::UTF8ToWide(delegate()->GetBindingScript()));
+  for (const Browser::UserScript& user_script : delegate()->user_scripts()) {
+    std::wstring code = base::UTF8ToWide(user_script.code);
+    if (user_script.timing == Browser::UserScriptInjectionTime::kDocumentEnd) {
+      // WebView2 only injects before the document is created, so the
+      // "document end" timing is emulated by waiting for the document to be
+      // parsed.
+      code = base::StringPrintf(
+          L"document.addEventListener('DOMContentLoaded',function(){%ls});",
+          code.c_str());
+    }
+    scripts.push_back(std::move(code));
+  }
+  if (scripts.empty())
+    return;
+
+  // Add the scripts asyncronously, each result id goes to its own slot.
+  script_ids_.resize(scripts.size());
+  scripts_adding_ = static_cast<int>(scripts.size());
   is_script_adding_ = true;
   base::WeakPtr<BrowserImplWebview2> ref = weak_factory_.GetWeakPtr();
-  auto callback =
-      Microsoft::WRL::Callback<
-          ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
-              [ref](HRESULT res, PCWSTR id) {
-                if (!ref)
-                  return E_FAIL;
-                BrowserImplWebview2* self = ref.get();
-                self->is_script_adding_ = false;
-                self->script_id_ = id;
-                // Some tasks happened during the update.
-                if (self->pending_script_update_) {
-                  self->pending_script_update_ = false;
-                  self->UpdateBindings();
-                }
-                if (self->pending_load_) {
-                  self->pending_load_();
-                  self->pending_load_ = nullptr;
-                }
+  for (size_t i = 0; i < scripts.size(); ++i) {
+    auto callback =
+        Microsoft::WRL::Callback<
+            ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+            [ref, i](HRESULT res, PCWSTR id) {
+              if (!ref)
+                return E_FAIL;
+              BrowserImplWebview2* self = ref.get();
+              if (SUCCEEDED(res) && id && i < self->script_ids_.size())
+                self->script_ids_[i] = id;
+              if (--self->scripts_adding_ > 0)
                 return S_OK;
-              });
-  webview_->AddScriptToExecuteOnDocumentCreated(
-      base::UTF8ToWide(delegate()->GetBindingScript()).c_str(),
-      callback.Get());
+              self->is_script_adding_ = false;
+              // Some tasks happened during the update.
+              if (self->pending_script_update_) {
+                self->pending_script_update_ = false;
+                self->UpdateScripts();
+              }
+              if (self->pending_load_) {
+                self->pending_load_();
+                self->pending_load_ = nullptr;
+              }
+              return S_OK;
+            });
+    webview_->AddScriptToExecuteOnDocumentCreated(scripts[i].c_str(),
+                                                  callback.Get());
+  }
 }
 
 void BrowserImplWebview2::SetBounds(RECT rect) {

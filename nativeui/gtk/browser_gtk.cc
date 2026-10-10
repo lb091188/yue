@@ -353,18 +353,37 @@ void Browser::SetBackgroundColor(Color color) {
   webkit_web_view_set_background_color(WEBKIT_WEB_VIEW(GetNative()), &gdkcolor);
 }
 
-void Browser::PlatformUpdateBindings() {
+void Browser::PlatformUpdateScripts() {
   WebKitUserContentManager* manager =
       webkit_web_view_get_user_content_manager(WEBKIT_WEB_VIEW(GetNative()));
+  // WebKit has no API to update a single script, so the list is rebuilt as a
+  // whole — which is also what keeps the user scripts alive across binding
+  // updates.
   webkit_user_content_manager_remove_all_scripts(manager);
-  WebKitUserScript* script = webkit_user_script_new(
-      GetBindingScript().c_str(),
-      WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
-      WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
-      nullptr,
-      nullptr);
-  webkit_user_content_manager_add_script(manager, script);
-  webkit_user_script_unref(script);
+  auto add_script = [manager](const std::string& code,
+                              WebKitUserScriptInjectionTime injection_time,
+                              bool main_frame_only) {
+    WebKitUserScript* script = webkit_user_script_new(
+        code.c_str(),
+        main_frame_only ? WEBKIT_USER_CONTENT_INJECT_TOP_FRAME
+                        : WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
+        injection_time,
+        nullptr,
+        nullptr);
+    webkit_user_content_manager_add_script(manager, script);
+    webkit_user_script_unref(script);
+  };
+  // The binding script goes first so that the user scripts can use the
+  // bindings, and user scripts are injected in the order they were added.
+  add_script(GetBindingScript(), WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
+             true);
+  for (const UserScript& user_script : user_scripts()) {
+    add_script(user_script.code,
+               user_script.timing == UserScriptInjectionTime::kDocumentStart
+                   ? WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START
+                   : WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_END,
+               user_script.main_frame_only);
+  }
 }
 
 // static
