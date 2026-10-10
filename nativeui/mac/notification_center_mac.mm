@@ -18,6 +18,13 @@
   return base::SysNSStringToUTF8([nsnotification userInfo][@"info"]);
 }
 
+- (std::string)infoForResponse:(UNNotificationResponse*)response {
+  return base::SysNSStringToUTF8(
+      response.notification.request.content.userInfo[@"info"]);
+}
+
+#pragma mark - NSUserNotificationCenterDelegate
+
 - (BOOL)userNotificationCenter:(NSUserNotificationCenter*)center
      shouldPresentNotification:(NSUserNotification*)nsnotification {
   return YES;
@@ -70,22 +77,73 @@
     shell_->on_notification_close.Emit([self infoForNotification:n]);
 }
 
+#pragma mark - UNUserNotificationCenterDelegate
+
+// The application is in the foreground: present the notification anyway, which
+// is what shouldPresentNotification: answers YES for on the legacy API.
+- (void)userNotificationCenter:(UNUserNotificationCenter*)center
+       willPresentNotification:(UNNotification*)notification
+         withCompletionHandler:
+             (void (^)(UNNotificationPresentationOptions))completionHandler {
+  shell_->on_notification_show.Emit(base::SysNSStringToUTF8(
+      notification.request.content.userInfo[@"info"]));
+  completionHandler(UNNotificationPresentationOptionBanner |
+                    UNNotificationPresentationOptionList |
+                    UNNotificationPresentationOptionSound);
+}
+
+- (void)userNotificationCenter:(UNUserNotificationCenter*)center
+    didReceiveNotificationResponse:(UNNotificationResponse*)response
+             withCompletionHandler:(void (^)(void))completionHandler {
+  std::string info = [self infoForResponse:response];
+  NSString* action = response.actionIdentifier;
+  if ([action isEqualToString:UNNotificationDefaultActionIdentifier]) {
+    shell_->on_notification_click.Emit(info);
+  } else if ([action isEqualToString:UNNotificationDismissActionIdentifier]) {
+    shell_->on_notification_close.Emit(info);
+  } else if ([response isKindOfClass:[UNTextInputNotificationResponse class]]) {
+    UNTextInputNotificationResponse* text_response =
+        (UNTextInputNotificationResponse*)response;
+    shell_->on_notification_reply.Emit(
+        info, base::SysNSStringToUTF8(text_response.userText));
+  } else {
+    // The info of an action is registered as its identifier.
+    shell_->on_notification_action.Emit(base::SysNSStringToUTF8(action));
+  }
+  // The legacy API removed the notification on activation; keep that behavior.
+  [center removeDeliveredNotificationsWithIdentifiers:
+      @[ response.notification.request.identifier ]];
+  completionHandler();
+}
+
 @end
 
 namespace nu {
 
 void NotificationCenter::Clear() {
+  if (CanUseUserNotifications()) {
+    [[UNUserNotificationCenter currentNotificationCenter]
+        removeAllDeliveredNotifications];
+    return;
+  }
   [NSUserNotificationCenter.defaultUserNotificationCenter
       removeAllDeliveredNotifications];
 }
 
 void NotificationCenter::PlatformInit() {
   center_ = [[NUNotificationCenterDelegate alloc] initWithShell:this];
-  [NSUserNotificationCenter.defaultUserNotificationCenter setDelegate:center_];
+  if (CanUseUserNotifications())
+    [UNUserNotificationCenter currentNotificationCenter].delegate = center_;
+  else
+    [NSUserNotificationCenter.defaultUserNotificationCenter
+        setDelegate:center_];
 }
 
 void NotificationCenter::PlatformDestroy() {
-  [NSUserNotificationCenter.defaultUserNotificationCenter setDelegate:nil];
+  if (CanUseUserNotifications())
+    [UNUserNotificationCenter currentNotificationCenter].delegate = nil;
+  else
+    [NSUserNotificationCenter.defaultUserNotificationCenter setDelegate:nil];
   [center_ release];
 }
 

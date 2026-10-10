@@ -546,6 +546,8 @@ jumbo_component("nativeui") {
       "AppKit.framework",
       "Carbon.framework",
       "WebKit.framework",
+      # Used by the notification implementation.
+      "UserNotifications.framework",
     ]
     configs -= [ "//build/config/compiler:enable_arc" ]
   } else if (is_win) {

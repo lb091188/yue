@@ -59,8 +59,10 @@ if(APPLE)
   find_library(SECURITY Security)
   find_library(WEBKIT WebKit)
   find_library(OD OpenDirectory)
+  find_library(USERNOTIFICATIONS UserNotifications)
   target_link_libraries(libyue PUBLIC
-    ${APPKIT} ${CARBON} ${IOKIT} ${SECURITY} ${WEBKIT} ${OD})
+    ${APPKIT} ${CARBON} ${IOKIT} ${SECURITY} ${WEBKIT} ${OD}
+    ${USERNOTIFICATIONS})
   target_compile_definitions(libyue PUBLIC SYSTEM_NATIVE_UTF8)
   target_compile_options(libyue PRIVATE
     -Wno-deprecated-declarations -Wno-unguarded-availability-new)

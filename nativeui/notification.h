@@ -78,6 +78,27 @@ class NATIVEUI_EXPORT Notification : public base::RefCounted<Notification> {
   base::ScopedTempDir image_dir_;
 #endif
 
+#if defined(OS_MAC)
+  // Contents of the notification when it is delivered through the
+  // UserNotifications framework: that API builds an immutable content object
+  // at delivery time instead of mutating a notification object, so the values
+  // are accumulated here while the setters are called. See notification_mac.mm
+  // for when this path is taken instead of NSUserNotification.
+  struct MacContent {
+    std::string identifier;
+    std::string title;
+    std::string body;
+    std::string info;
+    std::string image_path;
+    std::string response_placeholder;
+    bool silent = false;
+    bool has_reply = false;
+    std::vector<Action> actions;
+  };
+
+  MacContent mac_content_;
+#endif
+
   NativeNotification notification_ = nullptr;
 };
 

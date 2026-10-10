@@ -6,11 +6,27 @@
 #define NATIVEUI_MAC_NOTIFICATION_CENTER_MAC_H_
 
 #import <Cocoa/Cocoa.h>
+#import <UserNotifications/UserNotifications.h>
 
 #include "nativeui/notification_center.h"
 
+namespace nu {
+
+// Whether this process delivers notifications through the UserNotifications
+// framework. Only an application with a bundle identity can: for a bare
+// executable the notification center of the framework raises an exception, so
+// such processes keep the legacy NSUserNotification path instead (see
+// notification_mac.mm).
+bool CanUseUserNotifications();
+
+}  // namespace nu
+
+// The delegate of both notification APIs: the legacy NSUserNotificationCenter
+// and the UserNotifications framework share the class, and the members used at
+// runtime depend on CanUseUserNotifications().
 @interface NUNotificationCenterDelegate
-    : NSObject<NSUserNotificationCenterDelegate> {
+    : NSObject<NSUserNotificationCenterDelegate,
+               UNUserNotificationCenterDelegate> {
  @private
   nu::NotificationCenter* shell_;
 }
